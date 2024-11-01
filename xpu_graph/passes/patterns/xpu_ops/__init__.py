@@ -5,4 +5,8 @@ def get_all_patterns(target, opt_level) -> list:
         from .ascend.optimizer import get_all_patterns as get_all_optimizers
         return get_all_converters(opt_level) + get_all_optimizers(opt_level)
 
+    if target == Target.mlu:
+        from .mlu.converter import get_all_patterns as get_all_converters 
+        from .mlu.optimizer import get_all_patterns as get_all_optimizers 
+        return get_all_converters(opt_level) + get_all_optimizers(opt_level)
     return []
