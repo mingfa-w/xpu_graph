@@ -5,7 +5,7 @@ import time
 logger = logging.getLogger("XPU_GRAPH")
 
 def setup_logger(loglevel):
-    while logger.hasHandlers():
+    while logger.hasHandlers() and len(logger.handlers) != 0:
         return
     fmt = logging.Formatter(
         fmt="[XPU_GRAPH]: %(asctime)s.%(msecs)03d %(filename)s:%(lineno)d [%(levelname)s]: %(message)s",
