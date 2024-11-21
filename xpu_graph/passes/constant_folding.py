@@ -44,11 +44,18 @@ class ConstantFolding(Optimizer):
             if self._all_input_constant(node):
                 changed = True
                 new_args = (getattr(gm, arg.target) for arg in node.args)
-                from torch.fx.experimental.proxy_tensor import maybe_disable_fake_tensor_mode
+
+                diable_fake_mode = None
+                from packaging import version
+                torch_version = version.parse(torch.__version__[:5])
+                if torch_version < version.parse('2.5'):
+                    from torch.fx.experimental.proxy_tensor import maybe_disable_fake_tensor_mode as diable_fake_mode
+                else:
+                    from torch._subclasses.fake_tensor import unset_fake_temporarily as diable_fake_mode
 
                 logger.info(f"start constant folding: f{node.name} f{node.target}")
 
-                with maybe_disable_fake_tensor_mode():
+                with diable_fake_mode():
                     constant_value = node.target(*new_args, **node.kwargs)
 
                 constant_name = node.name + "_constant_folding"
