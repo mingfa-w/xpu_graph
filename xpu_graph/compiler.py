@@ -2,8 +2,8 @@ from typing import Callable, overload
 
 import torch
 
-from torch._dynamo import register_backend
-from torch._functorch.aot_autograd import aot_module_simplified, aot_export_module
+from torch._dynamo.backends.common import aot_autograd
+from torch._functorch.aot_autograd import aot_export_module
 
 from .passes.pass_manager import PassManager
 from .passes.patterns.pattern import Pattern
@@ -23,15 +23,7 @@ class XpuGraph:
 
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
-        # Unlift graph, which changes parameter node from "placehoder" to "get_attr"
-        # So we can do more aggresive constant folding
-        logger.info("unlift graph start...")
-        lifted_gm, gs = aot_export_module(dynamo_gm, example_inputs, trace_joint=False)
-        from xpu_graph.fx_utils import unlift_gm
-        unlifted_gm = unlift_gm(dynamo_gm, lifted_gm, gs)
-        logger.info("unlift graph complete")
-
-        def compiler(gm, sample_inputs):
+        def _compiler(gm, sample_inputs):
             from torch._guards import detect_fake_mode
             fake_mode = detect_fake_mode(sample_inputs)
             fake_inputs = [
@@ -41,12 +33,14 @@ class XpuGraph:
             fake_mode.allow_non_fake_inputs = True
             with fake_mode:
                 logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
+                logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
                 logger.info("xpu_graph passes start...")
 
                 xpu_compiled = self._pass_manager(gm, fake_inputs)
 
                 logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                 logger.info("xpu_graph passes complete")
+                logger.info(f"after xpu_graph, nodes num: {len(xpu_compiled.graph.nodes)}")
 
                 from xpu_graph.config import ExecuteMode
                 if self._config.execute_mode == ExecuteMode.graph:
@@ -55,7 +49,19 @@ class XpuGraph:
 
             return xpu_compiled
 
-        return compiler(unlifted_gm, example_inputs)
+        if self._config.freeze:
+            logger.info("unlift graph start...")
+            lifted_gm, gs = aot_export_module(dynamo_gm, example_inputs, trace_joint=False)
+
+            from xpu_graph.fx_utils import unlift_gm
+            unlifted_gm = unlift_gm(dynamo_gm, lifted_gm, gs)
+            logger.info("unlift graph complete")
+
+            return _compiler(unlifted_gm, example_inputs)
+        else:
+            xpu_gm = aot_autograd(fw_compiler=_compiler)(dynamo_gm, example_inputs)
+            return xpu_gm
+
 
     def get_pattern_manager(self):
         return self._pass_manager.get_pattern_manager()
