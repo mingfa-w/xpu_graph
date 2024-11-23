@@ -1,0 +1,38 @@
+import torch
+import torch.fx as fx
+
+from xpu_graph.passes.patterns.pattern import Pattern
+
+class RemoveUselessWhere(Pattern):
+    def process(self, gm: fx.GraphModule):
+        changed = False
+        candidates = [node for node in gm.graph.nodes if node.op == 'call_function' and node.target == torch.ops.aten.where.self]
+
+        for where in candidates:
+            inp = where.args[1]
+            other = where.args[2]
+            if inp == other:
+                where.replace_all_uses_with(inp)
+                gm.graph.erase_node(where)
+                changed = True
+                continue
+
+            if isinstance(inp, fx.Node) and inp.op == 'call_function' and \
+                isinstance(other, fx.Node) and other.op == 'call_function':
+                if (inp.target == torch.ops.aten.ones_like.default and other.target == torch.ops.aten.ones_like.default) or \
+                    (inp.target == torch.ops.aten.zeros_like.default and other.target == torch.ops.aten.zeros_like.default):
+                    with gm.graph.inserting_before(where):
+                        expand = gm.graph.call_function(
+                            torch.ops.aten.expand,
+                            args=(
+                                inp,
+                                where.meta['tensor_meta'].shape
+                            )
+                        )
+                        where.replace_all_uses_with(expand)
+                        gm.graph.erase_node(where)
+                        changed = True
+
+        gm.graph.lint()
+        gm.recompile()
+        return changed

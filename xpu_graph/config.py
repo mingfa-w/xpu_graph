@@ -44,3 +44,4 @@ class XpuGraphConfig:
     execute_mode: ExecuteMode = ExecuteMode.eager
     dump_graph: bool = False
     use_xpu_ops: bool = True # Use xpu_ops or not
+    freeze: bool = False # Freeze parameter, will do better constant_folding
