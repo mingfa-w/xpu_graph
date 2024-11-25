@@ -42,8 +42,7 @@ class XpuGraph:
                 logger.info("xpu_graph passes complete")
                 logger.info(f"after xpu_graph, nodes num: {len(xpu_compiled.graph.nodes)}")
 
-                from xpu_graph.config import ExecuteMode
-                if self._config.execute_mode == ExecuteMode.graph:
+                if self._config.enable_vendor_compiler:
                     from .backends import make_graph
                     return make_graph(xpu_compiled, fake_inputs, self._config.target)
 
