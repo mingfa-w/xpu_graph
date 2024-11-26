@@ -1,5 +1,7 @@
+from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
+
 
 class Target(Enum):
     ascend = "ascend"
@@ -12,6 +14,7 @@ class OptLevel(Enum):
     level1 = 1
     level2 = 2
     level3 = 3
+
     def __lt__(self, other):
         if isinstance(other, OptLevel):
             return self.value < other.value
@@ -32,9 +35,11 @@ class OptLevel(Enum):
             return self.value >= other.value
         return NotImplemented
 
+
 class ExecuteMode(Enum):
     eager = "eager"
     graph = "graph"
+
 
 @dataclass
 class XpuGraphConfig:
@@ -43,6 +48,6 @@ class XpuGraphConfig:
     opt_level: OptLevel = OptLevel.level1
     # execute_mode: ExecuteMode = ExecuteMode.eager
     dump_graph: bool = False
-    use_xpu_ops: bool = True # Use xpu_ops or not
-    freeze: bool = False # Freeze parameter, will do better constant_folding
-    enable_vendor_compiler: bool = False
+    use_xpu_ops: bool = True  # Use xpu_ops or not
+    freeze: bool = False  # Freeze parameter, will do better constant_folding
+    vendor_compiler: Optional[Dict[str, Any]] = None
