@@ -14,6 +14,7 @@ N = 8192
 
 layer_num = 1
 
+
 def test_e2e():
     class AscendW8A8Linear(nn.Module):
         def __init__(
@@ -26,10 +27,16 @@ def test_e2e():
             super().__init__()
             self.in_features = in_features
             self.out_features = out_features
-            self.weight = torch.randn(out_features, in_features).to(dtype=torch.int8).npu()
+            self.weight = (
+                torch.randn(out_features, in_features).to(dtype=torch.int8).npu()
+            )
 
-            self.in_scale = Parameter(torch.ones(in_features, dtype=torch.bfloat16).npu() * 0.5)
-            self.out_scale = Parameter(torch.randn(out_features, dtype=torch.bfloat16).npu())
+            self.in_scale = Parameter(
+                torch.ones(in_features, dtype=torch.bfloat16).npu() * 0.5
+            )
+            self.out_scale = Parameter(
+                torch.randn(out_features, dtype=torch.bfloat16).npu()
+            )
             self.bias = Parameter(torch.randn(out_features, dtype=torch.bfloat16).npu())
             self.out_dtype = out_dtype
 
@@ -57,6 +64,7 @@ def test_e2e():
 
     from xpu_graph.compiler import XpuGraph
     from xpu_graph.config import XpuGraphConfig
+
     config = XpuGraphConfig()
     config.target = xpu_graph.config.Target.ascend
     config.debug = True
@@ -66,5 +74,6 @@ def test_e2e():
 
     res = compiled_model(x)
 
-    from ..utils import is_similar
+    from xpu_graph.test_utils import is_similar
+
     assert is_similar(expect, res)

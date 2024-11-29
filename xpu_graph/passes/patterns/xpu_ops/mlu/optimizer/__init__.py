@@ -4,6 +4,7 @@ import importlib
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
 
+
 def get_all_patterns(opt_level: int):
     patterns = []
 
@@ -12,8 +13,15 @@ def get_all_patterns(opt_level: int):
 
         for name in dir(module):
             pat = getattr(module, name)
-            if isinstance(pat, type) and issubclass(pat, Pattern) and pat != Pattern and pat._opt_level <= opt_level:
+            if (
+                isinstance(pat, type)
+                and issubclass(pat, Pattern)
+                and pat != Pattern
+                and pat._opt_level <= opt_level
+            ):
                 patterns.append(pat())
 
-    logger.debug(f"xpu_graph enable builtin xpu_ops optimizers: {[pat.__class__.__name__ for pat in patterns]}")
+    logger.debug(
+        f"xpu_graph enable builtin xpu_ops optimizers: {[pat.__class__.__name__ for pat in patterns]}"
+    )
     return patterns

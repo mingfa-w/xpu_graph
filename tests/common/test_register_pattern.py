@@ -3,10 +3,11 @@ from xpu_graph.compiler import XpuGraph
 import torch.fx as fx
 
 import xpu_ops
+
 xpu_ops.load_xpu_ops_npu()
 
-def test_register_pattern():
 
+def test_register_pattern():
     def _add(x, y):
         z = x + y
         return z
@@ -25,5 +26,6 @@ def test_register_pattern():
     b = torch.randn(10)
     res = compiled(a, b)
 
-    from ..utils import is_similar
-    assert(is_similar(res, a - b))
+    from xpu_graph.test_utils import is_similar
+
+    assert is_similar(res, a - b)

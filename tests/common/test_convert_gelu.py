@@ -10,6 +10,7 @@ def test_convert_gelu():
 
     compiled_gelu0 = torch.compile(_gelu0, backend=XpuGraph())
 
-    from ..utils import is_similar
+    from xpu_graph.test_utils import is_similar
+
     input = torch.randn(10)
     is_similar(compiled_gelu0(input), _gelu0(input))

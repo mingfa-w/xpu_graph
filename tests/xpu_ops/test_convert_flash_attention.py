@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torch_npu
 from xpu_graph.compiler import XpuGraph
@@ -5,7 +6,9 @@ from xpu_graph.config import XpuGraphConfig
 import math
 import xpu_ops
 import xpu_graph
+
 xpu_ops.load_xpu_ops_npu()
+
 
 def test_flash_attention():
     batch = 1
@@ -16,12 +19,20 @@ def test_flash_attention():
     head_dim = 128
 
     def _attention(query, key, value):
-        mask = 1 - torch.tril(torch.ones(q_seq_length, kv_seq_length, dtype=torch.uint8)).npu()
+        mask = (
+            1
+            - torch.tril(
+                torch.ones(q_seq_length, kv_seq_length, dtype=torch.uint8)
+            ).npu()
+        )
         scale = 1.0 / math.sqrt(head_dim)
         output = torch_npu.npu_prompt_flash_attention(
-            query, key, value, num_heads=8,
+            query,
+            key,
+            value,
+            num_heads=8,
             num_key_value_heads=1,
-            input_layout='BNSD',
+            input_layout="BNSD",
             atten_mask=mask,
             scale_value=scale,
             pre_tokens=65535,
@@ -29,14 +40,27 @@ def test_flash_attention():
         )
         return output
 
-    query = torch.randn(batch, q_head_num, q_seq_length, head_dim).to(dtype=torch.bfloat16).npu()
-    key = torch.randn(batch, kv_head_num, kv_seq_length, head_dim).to(dtype=torch.bfloat16).npu()
-    value = torch.randn(batch, kv_head_num, kv_seq_length, head_dim).to(dtype=torch.bfloat16).npu()
+    query = (
+        torch.randn(batch, q_head_num, q_seq_length, head_dim)
+        .to(dtype=torch.bfloat16)
+        .npu()
+    )
+    key = (
+        torch.randn(batch, kv_head_num, kv_seq_length, head_dim)
+        .to(dtype=torch.bfloat16)
+        .npu()
+    )
+    value = (
+        torch.randn(batch, kv_head_num, kv_seq_length, head_dim)
+        .to(dtype=torch.bfloat16)
+        .npu()
+    )
 
     config = XpuGraphConfig(target=xpu_graph.config.Target.ascend)
     compiled = torch.compile(_attention, backend=XpuGraph(config), dynamic=False)
 
     res = compiled(query, key, value)
 
-    from ..utils import is_similar
+    from xpu_graph.test_utils import is_similar
+
     assert is_similar(res.cpu(), _attention(query, key, value).cpu())

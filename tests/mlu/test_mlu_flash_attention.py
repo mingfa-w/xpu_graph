@@ -3,9 +3,7 @@ import pytest
 
 import torch
 import xpu_graph
-from xpu_graph.config import XpuGraphConfig
-from xpu_graph.compiler import XpuGraph
-from ..utils import is_similar
+from xpu_graph.test_utils import is_similar
 
 
 def _sfdp_pattern_1(query, key, value, inv_scale):
@@ -298,7 +296,7 @@ def _sfdp_pattern_transformer_3(query, key, value, attention_mask):
     return attn_output
 
 
-def fa_test(xpu_graph, func):
+def fa_test(xpu_graph_backend, func):
     head_size = 64
     seq_q, seq_k = 38, 38
     head_num_q, head_num_k = 32, 32
@@ -361,17 +359,17 @@ def fa_test(xpu_graph, func):
         args += (attn_bias,)
 
     res1 = func(*args)
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res = compiled(*args)
 
-    is_similar(res1.float(), res.float())
+    assert is_similar(res1.float(), res.float())
 
 
 class TestFA:
     def setup_class(self):
         config = xpu_graph.config.XpuGraphConfig()
         config.target = xpu_graph.config.Target.mlu
-        self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
+        self.xpu_graph_backend = xpu_graph.compiler.XpuGraph(config)
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -396,8 +394,4 @@ class TestFA:
         ],
     )
     def test_sfdp_patterns(self, pattern_func):
-        fa_test(self.xpu_graph, pattern_func)
-
-
-if __name__ == "__main__":
-    pytest.main()
+        fa_test(self.xpu_graph_backend, pattern_func)
