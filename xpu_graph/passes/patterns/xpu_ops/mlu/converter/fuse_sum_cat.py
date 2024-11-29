@@ -151,7 +151,7 @@ def process_match_sum_cat(gm: fx.GraphModule):
             concat_input = []
             if is_concat:
                 concat_dim = node.args[1]
-            if len(node.args[0]) > 2:
+            if len(node.args[0]) > 1:
                 n_list = []
                 sum_dims = []
                 source_nodes = []

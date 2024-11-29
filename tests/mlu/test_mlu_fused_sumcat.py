@@ -85,7 +85,7 @@ def sumcat_test(xpu_graph, func):
     assert is_similar(res1.float(), res.float())
 
 
-class TestSlice:
+class TestSumCat:
     def setup_class(self):
         config = xpu_graph.config.XpuGraphConfig()
         config.target = xpu_graph.config.Target.mlu
