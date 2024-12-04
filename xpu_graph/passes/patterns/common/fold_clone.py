@@ -12,7 +12,6 @@ class FoldClone(Pattern):
             inp = clone.args[0]
             org_memoryformat = inp.meta['tensor_meta'].memory_format
             target_memoryformat = clone.kwargs['memory_format'] if 'memory_format' in clone.kwargs else org_memoryformat
-            print(f"org_memoryformat {org_memoryformat}, target_memoryformat {target_memoryformat}")
             if org_memoryformat == target_memoryformat:
                 changed=True
                 clone.replace_all_uses_with(inp)

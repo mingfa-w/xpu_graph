@@ -63,10 +63,13 @@ class XpuGraph:
                 dynamo_gm, example_inputs, trace_joint=False
             )
 
+            logger.debug(f"before unlift, graph like:\n {lifted_gm.graph}")
+
             from xpu_graph.fx_utils import unlift_gm
 
             unlifted_gm = unlift_gm(dynamo_gm, lifted_gm, gs)
             logger.info("unlift graph complete")
+            logger.debug(f"after unlift, graph like:\n {unlifted_gm.graph}")
 
             return _compiler(unlifted_gm, example_inputs)
         else:
