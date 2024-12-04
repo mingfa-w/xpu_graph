@@ -15,9 +15,9 @@ class Gelu(AutoMatchPattern):
         import math
         if div_node.args[1] != math.sqrt(2):
             return False
-        if add_node.args[1] != 1:
+        if add_node.args[1] != 1 and add_node.args[0] != 1:
             return False
-        if mul_node.args[1] != 0.5:
+        if mul_node.args[1] != 0.5 and mul_node.args[0] != 0.5:
             return False
 
         with gm.graph.inserting_before(div_node):

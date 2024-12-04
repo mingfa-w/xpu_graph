@@ -165,18 +165,18 @@ class AutoMatchPattern(Pattern):
         for uri in uris.split("/"):
             if not uri:
                 continue
-            value = torch.ops
+            if not (uri.startswith('torch.ops') or uri.startswith('operator')):
+                raise RuntimeError(f"Target {uri} is illegal")
             names = uri.split(".")
-            if names[-1] not in ('Scalar', 'Tensor', 'default'):
-                names.append('default')
-
-            for name in names:
+            import importlib
+            value = importlib.import_module(names[0])
+            for name in names[1:]:
                 if not hasattr(value, name):
-                    raise RuntimeError(f"Node class torch.ops.{uri} not found")
+                    raise RuntimeError(f"Target[{uri}] not found")
                 value = getattr(value, name)
-            if not isinstance(value, torch._ops.OpOverload):
-                raise RuntimeError(f"Object torch.ops.{uri} is not a torch._ops.OpOverload")
+
             cls_list.append(value)
+
         if not cls_list:
             raise RuntimeError("Empty node cls list")
         return tuple(cls_list)
@@ -189,6 +189,7 @@ class AutoMatchPattern(Pattern):
         return False
 
     def _process_rule(self, gm: fx.GraphModule, rule_name: str):
+        changed = False
         rule = self._rule_map[rule_name]
 
         for target in rule.type_map[rule.end_name]:
@@ -202,7 +203,7 @@ class AutoMatchPattern(Pattern):
                 if node_map is None or len(matched_rule_set)!= len(rule.links):
                     continue
                 if self.rewriter(gm, rule_name, node_map):
-                    return True
+                    changed = True
 
         return False
 
