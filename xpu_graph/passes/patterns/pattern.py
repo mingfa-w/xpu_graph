@@ -205,7 +205,7 @@ class AutoMatchPattern(Pattern):
                 if self.rewriter(gm, rule_name, node_map):
                     changed = True
 
-        return False
+        return changed
 
     def _get_match_subgraph(self, rule: PatternRule, node_alias: str, node_map: dict, matched_rule_set: set):
         for i, parent_node in enumerate(node_map[node_alias].args):
