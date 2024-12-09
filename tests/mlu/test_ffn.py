@@ -1,6 +1,7 @@
 import torch
 import torch_mlu
 import xpu_graph
+from xpu_graph.test_utils import is_similar
 
 import torch_mlu_ops as ops
 
@@ -14,12 +15,6 @@ act_mode_dict = {
     "gelu": torch.nn.functional.gelu,
     "silu": torch.nn.functional.silu,
 }
-
-
-def is_similar(result, expected, rtol=0.01, atol=0.01):
-    return result.shape == expected.shape and torch.allclose(
-        result, expected, rtol, atol
-    )
 
 
 class FeedForward(torch.nn.Module):

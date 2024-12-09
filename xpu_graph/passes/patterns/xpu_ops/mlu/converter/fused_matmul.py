@@ -5,7 +5,7 @@ from torch import nn, fx
 import torch_mlu
 import torch_mlu_ops
 from xpu_graph.utils import logger
-
+from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from .converter_utils import (
     check_mm_op,
@@ -366,6 +366,8 @@ def match_mm_view(graph_module, target_str):
 
 
 class FusedMatMul(Pattern):
+    _opt_level = OptLevel.level2
+
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
         is_modified |= match_mm(graph_module)

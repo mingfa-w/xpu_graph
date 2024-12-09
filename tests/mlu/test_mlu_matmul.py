@@ -1,16 +1,11 @@
+import pytest
 import torch
 import torch_mlu
-import xpu_graph
 import torch_mlu_ops
 import torch.nn.functional as F
-import pytest
+import xpu_graph
 
-
-def is_similar(result, expected, rtol=0.01, atol=0.01):
-    return result.shape == expected.shape and torch.allclose(
-        result, expected, rtol, atol
-    )
-
+from xpu_graph.test_utils import is_similar
 
 device = "mlu:0"
 data_type = torch.float32
@@ -100,7 +95,6 @@ def fn17(inputs, weight, bias):
 
 
 def matmul_test(xpu_graph, func):
-    print("=================================================================")
     if func in [fn0, fn1, fn9]:
         inputs = torch.randn((4096, 768), device=device, dtype=data_type)
         weight = torch.randn((768, 16), device=device, dtype=data_type)
