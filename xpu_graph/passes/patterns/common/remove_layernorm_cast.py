@@ -1,6 +1,7 @@
 import torch
 import torch.fx as fx
 
+from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import AutoMatchPattern
 
 class RemoveLayerNormCast(AutoMatchPattern):
