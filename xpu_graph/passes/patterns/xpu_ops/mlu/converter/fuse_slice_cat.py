@@ -2,7 +2,7 @@ import torch
 from torch import nn, fx
 import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern
-from .converter_utils import (
+from xpu_graph.passes.patterns.check_op import (
     check_cat_op,
     check_slice_op,
     check_stack_op,

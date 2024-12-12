@@ -2,20 +2,15 @@ import torch
 from torch import nn, fx
 import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern
-from .converter_utils import (
+from xpu_graph.passes.patterns.check_op import (
     check_cat_op,
     check_sum_op,
     check_stack_op,
 )
 from ..triton_kernel.triton_fused_sum_cat import (
-    torch_triton_fused_sumcat_replacement1,
-    torch_triton_fused_sumcat_replacement2,
+    mlu_triton_fuse_sum_cat_2d,
+    mlu_triton_fuse_sum_cat_3d,
 )
-
-
-class ConcatenateOperation(nn.Module):
-    def forward(self, inputs, concat_dim):
-        return torch.cat(inputs, dim=concat_dim)
 
 
 class ConcatenateSumOperation2(nn.Module):
@@ -25,21 +20,23 @@ class ConcatenateSumOperation2(nn.Module):
         if concat_dim != -1:
             raise NotImplementedError("concat_dim must be -1")
 
-        batch_size, seq_len, feature_dim = inputs[0].shape
+        batch_size, _, feature_dim = inputs[0].shape
         device = inputs[0].device
         sequence_lengths = [tensor.shape[1] for tensor in inputs]
         max_sequence_length = max(sequence_lengths)
 
-        if max_sequence_length * feature_dim <= 128 * 128:
-            lengths_tensor = torch.tensor(
-                sequence_lengths, device=device, dtype=torch.int32
-            )
-            return torch_triton_fused_sumcat_replacement2(
-                inputs, batch_size, lengths_tensor, feature_dim, len(inputs)
-            )
+        lengths_tensor = torch.tensor(
+            sequence_lengths, device=device, dtype=torch.int32
+        )
 
-        summed_tensors = [torch.sum(tensor, dim=[1]) for tensor in inputs]
-        return torch.cat(summed_tensors, dim=concat_dim)
+        return mlu_triton_fuse_sum_cat_3d(
+            inputs,
+            batch_size,
+            lengths_tensor,
+            feature_dim,
+            len(inputs),
+            max_sequence_length,
+        )
 
 
 class ConcatenateSumOperation1(nn.Module):
@@ -50,25 +47,26 @@ class ConcatenateSumOperation1(nn.Module):
         device = inputs[0].device
         sequence_lengths = [tensor.shape[1] for tensor in inputs]
         max_sequence_length = max(sequence_lengths)
-        output_stride = batch_size
         length_tensor = torch.tensor(sequence_lengths, dtype=torch.int32, device=device)
-
-        if max_sequence_length <= 1024:
-            output = torch_triton_fused_sumcat_replacement1(
+        if keep_dims is True and concat_dim != 0:
+            output = mlu_triton_fuse_sum_cat_3d(
                 inputs,
                 batch_size,
-                output_stride,
                 length_tensor,
+                1,
+                len(inputs),
+                max_sequence_length,
             )
-
-            if concat_mode == 1:
-                output = output.reshape(-1 if is_concat else (len(inputs), -1))
-            else:
-                output = output.transpose(0, 1)
-            return output
-
-        summed_tensors = [torch.sum(t, dim=[1], keepdim=keep_dims) for t in inputs]
-        return torch.cat(summed_tensors, dim=concat_dim)
+        else:
+            output = mlu_triton_fuse_sum_cat_2d(
+                inputs,
+                length_tensor,
+                batch_size,
+                max_sequence_length,
+            )
+            if is_concat and concat_dim == -1:
+                output = output.reshape([-1])
+        return output
 
 
 def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, concat_dim):
@@ -97,7 +95,6 @@ def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, concat_dim
 
     sum_mode = 0
     concat_mode = 0
-
     if is_concat:
         if is_2d and has_keep_dims:
             pass
@@ -110,6 +107,7 @@ def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, concat_dim
     else:  # stack
         if is_2d and not has_keep_dims:
             concat_mode = 1
+            concat_dim = 0
         else:
             return False, None
 
@@ -151,6 +149,10 @@ def process_match_sum_cat(gm: fx.GraphModule):
             concat_input = []
             if is_concat:
                 concat_dim = node.args[1]
+                if node.meta == {}:
+                    continue
+                if len(node.meta["tensor_meta"].shape) - 1 == concat_dim:
+                    concat_dim = -1
             if len(node.args[0]) > 1:
                 n_list = []
                 sum_dims = []
@@ -165,7 +167,6 @@ def process_match_sum_cat(gm: fx.GraphModule):
                         if len(n.args) == 3:
                             keep_dims.append(n.args[2])
                     else:
-                        changed1 = False
                         match_, new_node = _validate_sum_concat(
                             gm, node, source_nodes, sum_dims, keep_dims, concat_dim
                         )
@@ -188,14 +189,17 @@ def process_match_sum_cat(gm: fx.GraphModule):
                 else:
                     concat_input += n_list
 
-            if is_replace == True:
+            if is_replace is True:
                 changed = True
                 if len(concat_input) == 1:
                     node.replace_all_uses_with(concat_input[0])
                 else:
                     with gm.graph.inserting_before(node):
-                        concat_node = gm.graph.call_module(
-                            "mlu_fused_cat_replacement", args=(concat_input, concat_dim)
+                        concat_node = gm.graph.create_node(
+                            op="call_function",
+                            target=torch.ops.aten.cat.default,
+                            args=(concat_input, concat_dim),
+                            name=node.name + "_1",
                         )
                     node.replace_all_uses_with(concat_node)
                 gm.graph.erase_node(node)
@@ -204,8 +208,6 @@ def process_match_sum_cat(gm: fx.GraphModule):
 
 class FusedCatSum(Pattern):
     def process(self, gm: fx.GraphModule):
-        return False
-
         changed = False
         gm.add_submodule(
             "mlu_triton_fused_cat_sum_1_replacement", ConcatenateSumOperation1()
@@ -213,7 +215,6 @@ class FusedCatSum(Pattern):
         gm.add_submodule(
             "mlu_triton_fused_cat_sum_2_replacement", ConcatenateSumOperation2()
         )
-        gm.add_submodule("mlu_fused_cat_replacement", ConcatenateOperation())
 
         changed = changed | process_match_sum_cat(gm)
 
