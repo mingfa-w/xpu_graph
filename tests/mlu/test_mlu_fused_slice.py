@@ -375,4 +375,20 @@ class TestSlice:
 
 
 if __name__ == "__main__":
-    pytest.main()
+    config = xpu_graph.config.XpuGraphConfig()
+    config.target = xpu_graph.config.Target.mlu
+    config.vendor_compiler = {"mode": "reduce-overhead"}
+    xpu_graph = xpu_graph.compiler.XpuGraph(config)
+    slice_test(xpu_graph, fn0)
+    slice_test(xpu_graph, fn1)
+    slice_test(xpu_graph, fn2)
+    slice_test(xpu_graph, fn3)
+    slice_test(xpu_graph, fn5)
+    slice_test(xpu_graph, fn6)
+    slice_test(xpu_graph, fn7)
+    slice_test(xpu_graph, fn8)
+    slice_test(xpu_graph, fn9)
+    slice_test(xpu_graph, fn10)
+    slice_test(xpu_graph, fn11)
+    slice_test(xpu_graph, fn12)
+    slice_test(xpu_graph, fn13)
