@@ -11,6 +11,13 @@ def get_input_node(node, idx):
     return node.args[idx]
 
 
+def get_actual_node(node, idx):
+    new_node = node.args[idx]
+    if check_copy_op(new_node):
+        return new_node.args[0]
+    return new_node
+
+
 def check_op(node: fx.Node, target) -> bool:
     return _is_valid_node(node) and node.target == target
 
@@ -135,6 +142,10 @@ def check_act_op(
     if node.target == torch.ops.aten.relu.default:
         return True, "relu"
     return False, None
+
+
+def check_copy_op(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten._to_copy.default)
 
 
 def check_getitem_op(node: fx.node) -> bool:
