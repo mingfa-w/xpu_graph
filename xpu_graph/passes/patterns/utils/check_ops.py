@@ -1,6 +1,7 @@
 import torch
 from torch import nn, fx
 
+
 def _is_valid_node(node: fx.Node) -> bool:
     return isinstance(node, fx.Node) and node.op == "call_function"
 

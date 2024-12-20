@@ -3,6 +3,8 @@ import torch.fx as fx
 
 def expand_tensor(gm : fx.GraphModule, inp, src_node) -> fx.Node:
     scalar_tup = (int, float,)
+    assert inp in scalar_tup or isinstance(inp, fx.Node), "expand_tensor input error"
+
     if type(inp) in scalar_tup:
         return gm.graph.call_function(
             torch.ops.aten.full.default,
@@ -24,3 +26,5 @@ def expand_tensor(gm : fx.GraphModule, inp, src_node) -> fx.Node:
                 src_node.meta['tensor_meta'].shape,
             )
         )
+
+    return None

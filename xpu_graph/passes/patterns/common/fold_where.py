@@ -2,7 +2,7 @@ import torch
 import torch.fx as fx
 
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils import expand_tensor
+from xpu_graph.passes.patterns.utils.expand_tensor import expand_tensor
 
 class FoldWhere(Pattern):
     def process(self, gm: fx.GraphModule):

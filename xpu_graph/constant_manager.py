@@ -10,7 +10,9 @@ class ConstantManager:
 
     def register_constant(self, constant: torch.Tensor, name: str) -> str:
         constant_name = name + f"_{self._constant_id}"
-        self._gm.register_buffer(constant_name, constant)
+        # self._gm.register_buffer(constant_name, constant)
+        self._gm.register_parameter(constant_name, torch.nn.Parameter(constant, requires_grad=False))
+        # setattr(self._gm, constant_name, torch.nn.Parameter(constant, requires_grad=False))
         self._constant_id += 1
         return constant_name
 

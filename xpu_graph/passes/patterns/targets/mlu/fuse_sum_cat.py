@@ -2,12 +2,12 @@ import torch
 from torch import nn, fx
 import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.check_op import (
+from ...utils.check_ops import (
     check_cat_op,
     check_sum_op,
     check_stack_op,
 )
-from ..triton_kernel.triton_fused_sum_cat import (
+from .triton_kernel.triton_fused_sum_cat import (
     mlu_triton_fuse_sum_cat_2d,
     mlu_triton_fuse_sum_cat_3d,
 )
