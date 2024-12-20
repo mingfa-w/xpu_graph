@@ -1,6 +1,8 @@
+import pytest
 import torch
 import torch_mlu
 import xpu_graph
+from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import is_similar
 
 import torch_mlu_ops as ops
@@ -61,70 +63,79 @@ def fn2(ffn_input, ffn_weight1, ffn_weight2, bias1=None, bias2=None, act="silu")
 
 
 def fn3(ffn_input, ffn_weight1, ffn_weight2, bias1=None, bias2=None, act="silu"):
-    output = torch.bmm(ffn_input, ffn_weight1.transpose(1, 0))
+    output = torch.matmul(ffn_input, ffn_weight1.transpose(1, 0))
     if bias1 is not None:
         output = output + bias1
     torch_act = act_mode_dict[act]
     output = torch_act(output)
-    output = torch.bmm(output, ffn_weight2.transpose(1, 0))
+    output = torch.matmul(output, ffn_weight2.transpose(1, 0))
     if bias2 is not None:
         output = output + bias2
-    return output
+    return output.view(-1)
 
 
 def ffn_test(xpu_graph, func):
-    batch = 5
-    seq_len = 16
-    input_size = 512
-    hidden_size = 1024
-    dtype = torch.float32
-    if func in [fn0, fn1]:
-        act_mode = "silu"
-    else:
-        act_mode = "gelu"
-    if func in [fn0]:
-        bias = False
-    else:
-        bias = True
+    with torch.no_grad():
+        batch = 5
+        seq_len = 16
+        input_size = 512
+        hidden_size = 1024
+        dtype = torch.float32
+        if func in [fn0, fn1]:
+            act_mode = "silu"
+        else:
+            act_mode = "gelu"
+        if func in [fn0]:
+            bias = False
+        else:
+            bias = True
 
-    use_gate = False
-    ffn_input = torch.randn((batch, seq_len, input_size), dtype=dtype, device=device)
-    args = [ffn_input]
-    pytorch_ffn = FeedForward(input_size, hidden_size, act_mode, bias=bias).mlu()
-    pytorch_ffn = pytorch_ffn.to(dtype)
-    args += [
-        pytorch_ffn.up_linear.weight,
-        pytorch_ffn.down_linear.weight,
-        pytorch_ffn.up_linear.bias,
-        pytorch_ffn.down_linear.bias,
-    ]
-    args += [act_mode]
+        use_gate = False
+        ffn_input = torch.randn(
+            (batch, seq_len, input_size), dtype=dtype, device=device
+        )
+        args = [ffn_input]
+        pytorch_ffn = FeedForward(input_size, hidden_size, act_mode, bias=bias).mlu()
+        pytorch_ffn = pytorch_ffn.to(dtype)
+        args += [
+            pytorch_ffn.up_linear.weight,
+            pytorch_ffn.down_linear.weight,
+            pytorch_ffn.up_linear.bias,
+            pytorch_ffn.down_linear.bias,
+        ]
+        args += [act_mode]
 
-    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
-    res1 = func(*args)
-    res = compiled(*args)
-    assert is_similar(res1.float(), res.float())
-    tmo_output1 = ops.ffn(
-        ffn_input,
-        pytorch_ffn.up_linear.weight,
-        pytorch_ffn.up_linear.bias,
-        pytorch_ffn.down_linear.weight,
-        pytorch_ffn.down_linear.bias,
-        pytorch_ffn.gated_linear.weight if use_gate else None,
-        pytorch_ffn.gated_linear.bias if use_gate else None,
-        act_mode,
+        compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+        res1 = func(*args)
+        res = compiled(*args)
+        assert is_similar(res1.float(), res.float())
+        tmo_output1 = ops.ffn(
+            ffn_input,
+            pytorch_ffn.up_linear.weight,
+            pytorch_ffn.up_linear.bias,
+            pytorch_ffn.down_linear.weight,
+            pytorch_ffn.down_linear.bias,
+            pytorch_ffn.gated_linear.weight if use_gate else None,
+            pytorch_ffn.gated_linear.bias if use_gate else None,
+            act_mode,
+        )
+        assert is_similar(res1.float().reshape(-1), tmo_output1.float().reshape(-1))
+
+
+class TestFFN:
+    def setup_class(self):
+        config = xpu_graph.config.XpuGraphConfig()
+        config.target = xpu_graph.config.Target.mlu
+        config.opt_level = OptLevel.level2
+        self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
+
+    @pytest.mark.parametrize(
+        "pattern_func",
+        [fn0, fn1, fn2, fn3],
     )
-    assert is_similar(res1.float(), tmo_output1.float())
+    def test_slice_patterns(self, pattern_func):
+        ffn_test(self.xpu_graph, pattern_func)
 
 
 if __name__ == "__main__":
-    config = xpu_graph.config.XpuGraphConfig()
-    config.target = xpu_graph.config.Target.mlu
-    # config.vendor_compiler = {"mode": "reduce-overhead"}
-    xpu_graph = xpu_graph.compiler.XpuGraph(config)
-    """
-    ffn_test(xpu_graph, fn0)
-    ffn_test(xpu_graph, fn1)
-    ffn_test(xpu_graph, fn2)
-    """
-    ffn_test(xpu_graph, fn3)
+    pytest.main()

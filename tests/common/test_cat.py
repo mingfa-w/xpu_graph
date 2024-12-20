@@ -39,9 +39,4 @@ class TestCat:
 
 
 if __name__ == "__main__":
-    config = xpu_graph.config.XpuGraphConfig()
-    config.target = xpu_graph.config.Target.mlu
-    xpu_graph = xpu_graph.compiler.XpuGraph(config)
-    cat_test(xpu_graph, fn0)
-
-    # pytest.main()
+    pytest.main()

@@ -38,6 +38,7 @@ def match_cat_cat(gm):
                     name=node.name + "_1",
                 )
                 node.replace_all_uses_with(concat_node)
+                gm.graph.erase_node(node)
             changed = True
     return changed
 
@@ -45,7 +46,6 @@ def match_cat_cat(gm):
 class FoldCat(Pattern):
     def process(self, gm: fx.GraphModule):
         changed = False
-        print(gm.graph)
         candidates = [
             node
             for node in gm.graph.nodes
@@ -62,7 +62,6 @@ class FoldCat(Pattern):
                 gm.graph.erase_node(cat)
 
         changed = changed | match_cat_cat(gm)
-        print(gm.graph)
 
         gm.graph.lint()
         gm.recompile()

@@ -1,4 +1,5 @@
 import torch
+import operator
 from torch import nn, fx
 
 
@@ -32,6 +33,22 @@ def check_pow_op(node: fx.Node) -> bool:
 
 def check_mul_op(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten.mul.Tensor)
+
+
+def check_meta(node: fx.Node) -> bool:
+    if node.meta == {}:
+        return False
+    if "tensor_meta" not in node.meta:
+        return False
+    return True
+
+
+def check_meta_2d(node: fx.Node) -> bool:
+    if not check_meta(node):
+        return False
+    if len(node.meta["tensor_meta"].shape) == 2:
+        return True
+    return False
 
 
 def check_div_or_mul_op(
@@ -118,3 +135,11 @@ def check_act_op(
     if node.target == torch.ops.aten.relu.default:
         return True, "relu"
     return False, None
+
+
+def check_getitem_op(node: fx.node) -> bool:
+    return check_op(node, operator.getitem)
+
+
+def check_layernorm_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.native_layer_norm.default)
