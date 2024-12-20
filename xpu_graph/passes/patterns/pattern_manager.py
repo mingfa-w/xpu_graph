@@ -14,13 +14,19 @@ class PatternManager(Optimizer):
 
         self._patterns = []
 
-        from .common import get_all_patterns
-        self._patterns += get_all_patterns(config.opt_level)
+        from .common import get_all_patterns as get_common_patterns
+        self._patterns += get_common_patterns(config)
 
-        # add converters
+        from .structure import get_all_patterns as get_structure_patterns
+        self._patterns += get_structure_patterns(config)
+
         if config.use_xpu_ops:
             from .xpu_ops import get_all_patterns as get_xpu_ops_patterns
-            self._patterns += get_xpu_ops_patterns(config.target, config.opt_level)
+            self._patterns += get_xpu_ops_patterns(config)
+
+        from .targets import get_all_patterns as get_target_patterns
+        self._patterns += get_target_patterns(config)
+
 
     def process(self, gm: fx.GraphModule) -> bool:
         changed = False

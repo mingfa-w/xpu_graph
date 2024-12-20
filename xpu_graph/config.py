@@ -35,6 +35,10 @@ class OptLevel(Enum):
             return self.value >= other.value
         return NotImplemented
 
+    def __eq__(self, other):
+        if isinstance(other, OptLevel):
+            return self.value == other.value
+        return NotImplemented
 
 class ExecuteMode(Enum):
     eager = "eager"
@@ -48,6 +52,6 @@ class XpuGraphConfig:
     opt_level: OptLevel = OptLevel.level1
     # execute_mode: ExecuteMode = ExecuteMode.eager
     dump_graph: bool = False
-    use_xpu_ops: bool = True  # Use xpu_ops or not
+    use_xpu_ops: bool = False  # Use xpu_ops or not
     freeze: bool = False  # Freeze parameter, will do better constant_folding
     vendor_compiler: Optional[Dict[str, Any]] = None

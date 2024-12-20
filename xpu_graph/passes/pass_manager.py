@@ -13,6 +13,10 @@ class PassManager:
         from .patterns.pattern_manager import PatternManager
         self._pattern_manager = PatternManager(config)
 
+        # from .inline_module import InlineModuleAndDecomp
+        # if InlineModuleAndDecomp._opt_level <= config.opt_level:
+        #     self._passes.append(InlineModuleAndDecomp())
+
         from .dce import Dce
         if Dce._opt_level <= config.opt_level:
             self._passes.append(Dce())
@@ -33,6 +37,11 @@ class PassManager:
             changed = False
             for pass_ in self._passes:
                 changed = changed or pass_(gm)
+
+            # from .inline_module import InlineModuleAndDecomp
+            # inliner = InlineModuleAndDecomp(gm)
+            # gm = inliner.transform()
+            # print(gm.graph)
 
             from torch.fx.passes.shape_prop import ShapeProp
             ShapeProp(gm).propagate(*example_inputs)

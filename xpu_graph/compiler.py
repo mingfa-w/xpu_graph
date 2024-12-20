@@ -62,6 +62,8 @@ class XpuGraph:
             lifted_gm, gs = aot_export_module(
                 dynamo_gm, example_inputs, trace_joint=False
             )
+            print(f"dynamo_gm: {dynamo_gm.graph}")
+            print(f"graph signature: {gs}")
 
             logger.debug(f"before unlift, graph like:\n {lifted_gm.graph}")
 

@@ -36,7 +36,7 @@ class FoldAdd0(Pattern):
             if is_match:
                 changed = True
                 with gm.graph.inserting_before(add):
-                    from xpu_graph.passes.patterns.utils import expand_tensor
+                    from xpu_graph.passes.patterns.utils.expand_tensor import expand_tensor
                     expand = expand_tensor(gm, res, add)
                 add.replace_all_uses_with(res)
                 gm.graph.erase_node(add)

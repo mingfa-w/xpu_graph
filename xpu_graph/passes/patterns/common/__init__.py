@@ -2,10 +2,10 @@ import pkgutil
 import importlib
 
 from xpu_graph.passes.patterns.pattern import Pattern, AutoMatchPattern
-from xpu_graph.config import OptLevel
+from xpu_graph.config import XpuGraphConfig
 from xpu_graph.utils import logger
 
-def get_all_patterns(opt_level: OptLevel):
+def get_all_patterns(config: XpuGraphConfig):
     patterns = []
 
     for _, module_name, _ in pkgutil.iter_modules(__path__):
@@ -16,7 +16,7 @@ def get_all_patterns(opt_level: OptLevel):
             if isinstance(pat, type) and \
                 issubclass(pat, Pattern) and \
                 pat not in (Pattern, AutoMatchPattern) and\
-                pat._opt_level <= opt_level:
+                pat._opt_level <= config.opt_level:
 
                 patterns.append(pat())
 

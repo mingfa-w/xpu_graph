@@ -13,6 +13,7 @@ __all__ = ['ConstantFolding']
 def _no_folding(node: fx.Node):
     no_fold_call_function_list = [
         torch.ops.aten.t.default,
+        torch.ops.aten.lift_fresh_copy.default,
     ]
     if node.op == "call_function":
         return node.target in no_fold_call_function_list
@@ -33,7 +34,7 @@ class ConstantFolding(Optimizer):
 
         # For better readability, we insert get_attr node in the front of graph
         for get_attr_insert_point in gm.graph.nodes:
-            if get_attr_insert_point.op != "get_attr":
+            if get_attr_insert_point.op != "get_attr" and get_attr_insert_point.op != "placeholder":
                 break
 
         for node in graph.nodes:

@@ -2,7 +2,7 @@ import torch
 import torch.fx as fx
 
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.check_op import check_cat_op
+from xpu_graph.passes.patterns.utils.check_ops import check_cat_op
 
 
 def match_cat_cat(gm):

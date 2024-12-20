@@ -5,7 +5,7 @@ import torch_mlu_ops
 
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
-from xpu_graph.passes.patterns.check_op import (
+from ...utils.check_ops import (
     check_add_op,
     check_bmm_op,
     check_softmax_op,
