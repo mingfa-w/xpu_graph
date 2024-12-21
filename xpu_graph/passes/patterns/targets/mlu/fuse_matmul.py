@@ -7,7 +7,7 @@ import torch_mlu_ops
 from xpu_graph.utils import logger
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.check_op import (
+from ...utils.check_ops import (
     check_mm_op,
     check_add_op,
     check_view,

@@ -6,11 +6,18 @@ from ...utils.check_ops import (
     check_cat_op,
     check_slice_op,
     check_stack_op,
+    check_meta_2d,
 )
 
 from .triton_kernel.triton_fused_slice_cat import (
     mlu_triton_fused_slice_cat,
 )
+
+from .triton_kernel.triton_fused_slice import (
+    mlu_triton_fused_slice_low,
+)
+
+MAX_INT64 = 9223372036854775807
 
 
 def apply_slice_operation(input_tensor, indices):
@@ -34,29 +41,6 @@ class FuseSliceCatSameInputReplacement(nn.Module):
             raise NotImplementedError("input must be 2d")
         indices = [i for start, end in slices for i in range(start, end)]
         return apply_slice_operation(input_tensor, indices)
-
-
-class FuseSliceCatMixedInputReplacement(nn.Module):
-    def forward(self, input_tensors, slices, axis=-1):
-        output_tensor_list = []
-        last_indices = []
-        last_input_tensor = input_tensors[0]
-        last_indices.extend(range(slices[0][0], slices[0][1]))
-        for idx in range(1, len(input_tensors)):
-            input_tensor = input_tensors[idx]
-            if id(input_tensor) == id(last_input_tensor):
-                last_indices.extend(range(slices[idx][0], slices[idx][1]))
-            else:
-                output_tensor_list.append(
-                    apply_slice_operation(last_input_tensor, last_indices)
-                )
-                last_input_tensor = input_tensor
-                last_indices = []
-                last_indices.extend(range(slices[idx][0], slices[idx][1]))
-        output_tensor_list.append(
-            apply_slice_operation(last_input_tensor, last_indices)
-        )
-        return torch.cat(output_tensor_list, axis=axis)
 
 
 class CatReplacement(nn.Module):
@@ -84,17 +68,26 @@ class ExpandTransReplacement(nn.Module):
         return input_tensor.reshape(input_tensor.shape[0], dim, -1).transpose(0, 1)
 
 
-class SliceReplacement(nn.Module):
-    def forward(self, input_tensor, slice):
-        return input_tensor[:, slice[0] : slice[1]]
-
-
-def validate_slice_operation(node, slice_input, slice_axis):
-    if slice_axis[0] != 1:
-        return False
-    if len(slice_input[0].meta["tensor_meta"].shape) != 2:
-        return False
-    return True
+def validate_slice_operation(n_list):
+    if len(n_list) < 2:
+        return False, None, None
+    slice_input = []
+    slice_param = []
+    slice_axis = []
+    for n in n_list:
+        slice_input.append(n.args[0])
+        slice_axis.append(n.args[1])
+        right = n.args[3]
+        if right == MAX_INT64:
+            right = slice_input[0].meta["tensor_meta"].shape[-1]
+        elif right < 0:
+            right = slice_input[0].meta["tensor_meta"].shape[-1] - (-right)
+        slice_param.append((n.args[2], right))
+    if slice_input.count(slice_input[0]) != len(slice_input):
+        return False, None, None
+    if slice_axis.count(1) != len(slice_axis):
+        return False, None, None
+    return True, slice_input[0], slice_param
 
 
 def extract_slice_info(nodes):
@@ -112,266 +105,89 @@ def extract_slice_info(nodes):
     return True, slice_input, slice_axis, slice_param
 
 
-def _is_slice_stack(node: fx.Node):
-    if not check_stack_op(node):
-        return False, None, None, None
-
-    valid, slice_input, slice_axis, slice_param = extract_slice_info(node.args[0])
-    if not valid:
-        return False, None, None, None
-
-    if not validate_slice_operation(node, slice_input, slice_axis):
-        return False, None, None, None
-
-    has_same_input = slice_input.count(slice_input[0]) == len(slice_input)
-    has_same_axis = slice_axis.count(slice_axis[0]) == len(slice_axis)
-
-    return (
-        (has_same_input and has_same_axis),
-        slice_input[0],
-        slice_axis[0],
-        slice_param,
-    )
+def insert_fuse_slice(gm, node, src_node, slice_param):
+    with gm.graph.inserting_before(node):
+        slice_node = gm.graph.call_module(
+            "mlu_triton_fuse_slice_cat_same_input_module",
+            args=(src_node, slice_param),
+        )
+    return slice_node
 
 
-def _is_slice_cat_with_same_input(node: fx.Node):
-    if not check_cat_op(node) or node.args[1] not in (-1, 1):
-        return False, None, None, None
-
-    valid, slice_input, slice_axis, slice_param = extract_slice_info(node.args[0])
-    if not valid:
-        return False, None, None, None
-
-    if not validate_slice_operation(node, slice_input, slice_axis):
-        return False, None, None, None
-
-    has_same_input = slice_input.count(slice_input[0]) == len(slice_input)
-    has_same_axis = slice_axis.count(slice_axis[0]) == len(slice_axis)
-
-    return (
-        (has_same_input and has_same_axis),
-        slice_input[0],
-        slice_axis[0],
-        slice_param,
-    )
-
-
-def _is_slice_cat_mixed_input(node: fx.Node):
-    if check_cat_op(node):
-        if node.args[1] != -1:
-            return False, None, None, None
-        slice_input = []
-        slice_axis = []
-        slice_param = []
-        for slice_node in node.args[0]:
-            if check_slice_op(slice_node) is False:
-                return False, None, None, None
-            slice_input.append(slice_node.args[0])
-            slice_axis.append(slice_node.args[1])
-            slice_param.append((slice_node.args[2], slice_node.args[3]))
-
-        if slice_axis[0] != 1:
-            return False, None, None, None
-        matched = slice_axis.count(slice_axis[0]) == len(slice_axis)
-        input_node = slice_input[0]
-        for input_node in slice_input:
-            if len(input_node.meta["tensor_meta"].shape) != 2:
-                return False, None, None, None
-        return matched, slice_input, slice_axis[0], slice_param
-
-    return False, None, None, None
-
-
-def fuse_slice_cat_with_same_input(gm: fx.GraphModule):
+def fuse_mixed_ops_and_catstack(gm: fx.GraphModule):
     changed = False
     for node in reversed(gm.graph.nodes):
-        matched, src_node, axis, slice_param = _is_slice_cat_with_same_input(node)
-        if matched:
-            with gm.graph.inserting_before(node):
-                slice_node = gm.graph.call_module(
-                    "mlu_triton_fuse_slice_cat_same_input_module",
-                    args=(src_node, slice_param),
-                )
-            node.replace_all_uses_with(slice_node)
-            changed = True
-            slice_nodes = node.args[0]
-            gm.graph.erase_node(node)
-            for slice_node in slice_nodes:
-                if len(slice_node.users) == 0:
-                    gm.graph.erase_node(slice_node)
-    return changed
-
-
-def fuse_slice_cat_with_mixed_input(gm: fx.GraphModule):
-    changed = False
-    for node in reversed(gm.graph.nodes):
-        matched, src_nodes, axis, slice_param = _is_slice_cat_mixed_input(node)
-        if matched:
-            with gm.graph.inserting_before(node):
-                slice_node = gm.graph.call_module(
-                    "mlu_triton_fuse_slice_cat_mixed_input_module",
-                    args=(src_nodes, slice_param),
-                )
-            node.replace_all_uses_with(slice_node)
-            changed = True
-            slice_nodes = node.args[0]
-            gm.graph.erase_node(node)
-            for slice_node in slice_nodes:
-                if len(slice_node.users) == 0:
-                    gm.graph.erase_node(slice_node)
-    return changed
-
-
-def fuse_mixed_ops_and_cat(gm: fx.GraphModule):
-    changed = False
-    for node in reversed(gm.graph.nodes):
-        changed1 = False
-        cat_input_list = []
-        if check_cat_op(node):
-            if (node.args[1] != -1) & (node.args[1] != 1):
+        is_cat = check_cat_op(node)
+        if (not check_stack_op(node)) and (not is_cat):
+            continue
+        if is_cat:
+            if not check_meta_2d(node):
                 continue
-            slice_input = []
-            slice_param = []
-            n_list = []
-            for n in node.args[0]:
-                is_slice = False
-                if check_slice_op(n):
-                    if len(n.args[0].meta["tensor_meta"].shape) == 2:
-                        if n.args[1] == 1:
-                            slice_input.append(n.args[0])
-                            slice_param.append((n.args[2], n.args[3]))
-                            n_list.append(n)
-                            is_slice = True
-                if is_slice == False:
-                    if len(slice_input) > 0:
-                        if slice_input.count(slice_input[0]) == len(slice_input):
-                            with gm.graph.inserting_before(node):
-                                slice_node = gm.graph.call_module(
-                                    "mlu_triton_fuse_slice_cat_same_input_module",
-                                    args=(slice_input[0], slice_param),
-                                )
-                                cat_input_list.append(slice_node)
-                                changed1 = True
-                        else:
-                            cat_input_list += n_list
-                    cat_input_list.append(n)
-                    slice_input = []
-                    slice_param = []
-                    n_list = []
-            if len(slice_input) > 0:
-                if slice_input.count(slice_input[0]) == len(slice_input):
-                    with gm.graph.inserting_before(node):
-                        slice_node = gm.graph.call_module(
-                            "mlu_triton_fuse_slice_cat_same_input_module",
-                            args=(slice_input[0], slice_param),
-                        )
-                        cat_input_list.append(slice_node)
-                        changed1 = True
-                else:
-                    cat_input_list += n_list
-            if changed1 == True:
-                with gm.graph.inserting_before(node):
-                    cat_node = gm.graph.call_module(
-                        "mlu_triton_fused_cat", args=(cat_input_list, -1)
-                    )
-                node.replace_all_uses_with(cat_node)
-                slice_nodes = node.args[0]
-                for slice_node in slice_nodes:
-                    if len(slice_node.users) == 0:
-                        gm.graph.erase_node(slice_node)
-                gm.graph.erase_node(node)
-                changed = True
-
-    return changed
-
-
-def fuse_slice_stack_same_input(gm: fx.GraphModule):
-    changed = False
-    for node in reversed(gm.graph.nodes):
-        matched, src_node, axis, slice_param = _is_slice_stack(node)
-        if matched:
-            with gm.graph.inserting_before(node):
-                slice_node = gm.graph.call_module(
-                    "mlu_triton_fuse_slice_cat_same_input_module",
-                    args=(src_node, slice_param),
-                )
-            with gm.graph.inserting_before(node):
-                stack_node = gm.graph.call_module(
-                    "expand_transpose_module",
-                    args=(slice_node, len(slice_param)),
-                )
-            node.replace_all_uses_with(stack_node)
-            changed = True
-    return changed
-
-
-def fuse_mixed_ops_and_stack(gm: fx.GraphModule):
-    changed = False
-    for node in reversed(gm.graph.nodes):
+            axis = node.args[1]
+            if axis == 0:
+                continue
         changed1 = False
         cat_input_list = []
-        if check_stack_op(node):
-            slice_input = []
-            slice_param = []
-            n_list = []
-            for n in node.args[0]:
-                is_slice = False
-                if check_slice_op(n):
-                    if len(n.args[0].meta["tensor_meta"].shape) == 2:
-                        if n.args[1] == 1:
-                            slice_input.append(n.args[0])
-                            slice_param.append((n.args[2], n.args[3]))
-                            n_list.append(n)
-                            is_slice = True
-                if is_slice == False:
-                    if len(slice_input) > 0:
-                        if slice_input.count(slice_input[0]) == len(slice_input):
-                            with gm.graph.inserting_before(node):
-                                slice_node = gm.graph.call_module(
-                                    "mlu_triton_fuse_slice_cat_same_input_module",
-                                    args=(slice_input[0], slice_param),
-                                )
-                            with gm.graph.inserting_before(node):
-                                stack_node = gm.graph.call_module(
-                                    "expand_transpose_module",
-                                    args=(slice_node, len(slice_param)),
-                                )
-                                cat_input_list.append(stack_node)
-                                changed1 = True
-                        else:
-                            cat_input_list += n_list
-                    cat_input_list.append(n)
-                    slice_input = []
-                    slice_param = []
-                    n_list = []
-            if len(slice_input) > 0:
-                if slice_input.count(slice_input[0]) == len(slice_input):
-                    with gm.graph.inserting_before(node):
-                        slice_node = gm.graph.call_module(
-                            "mlu_triton_fuse_slice_cat_same_input_module",
-                            args=(slice_input[0], slice_param),
-                        )
-                    with gm.graph.inserting_before(node):
-                        stack_node = gm.graph.call_module(
-                            "expand_transpose_module",
-                            args=(slice_node, len(slice_param)),
-                        )
+        n_list = []
+        for n in node.args[0]:
+            if check_slice_op(n) and check_meta_2d(n):
+                n_list.append(n)
+            else:
+                is_slice, src_node, slice_param = validate_slice_operation(n_list)
+                if is_slice:
+                    slice_node = insert_fuse_slice(gm, node, src_node, slice_param)
+                    if is_cat:
+                        cat_input_list.append(slice_node)
+                    else:
+                        with gm.graph.inserting_before(node):
+                            stack_node = gm.graph.call_module(
+                                "expand_transpose_module",
+                                args=(slice_node, len(slice_param)),
+                            )
                         cat_input_list.append(stack_node)
-                        changed1 = True
+                    changed1 = True
                 else:
                     cat_input_list += n_list
-            if changed1 == True:
+                cat_input_list.append(n)
+                n_list = []
+        is_slice, src_node, slice_param = validate_slice_operation(n_list)
+        if is_slice:
+            slice_node = insert_fuse_slice(gm, node, src_node, slice_param)
+            if is_cat:
+                cat_input_list.append(slice_node)
+            else:
+                with gm.graph.inserting_before(node):
+                    stack_node = gm.graph.call_module(
+                        "expand_transpose_module",
+                        args=(slice_node, len(slice_param)),
+                    )
+                cat_input_list.append(stack_node)
+            changed1 = True
+        else:
+            cat_input_list += n_list
+
+        if changed1 == True:
+            if is_cat:
+                with gm.graph.inserting_before(node):
+                    cat_node = gm.graph.create_node(
+                        op="call_function",
+                        target=torch.ops.aten.cat.default,
+                        args=(cat_input_list, -1),
+                        name=node.name + "_replacement",
+                    )
+            else:
                 with gm.graph.inserting_before(node):
                     cat_node = gm.graph.call_module(
                         "mlu_triton_fused_stack", args=(cat_input_list, -1)
                     )
-                node.replace_all_uses_with(cat_node)
-                slice_nodes = node.args[0]
-                for slice_node in slice_nodes:
-                    if len(slice_node.users) == 0:
-                        gm.graph.erase_node(slice_node)
-                gm.graph.erase_node(node)
-                changed = True
+            node.replace_all_uses_with(cat_node)
+            slice_nodes = node.args[0]
+            for slice_node in slice_nodes:
+                if len(slice_node.users) == 0:
+                    gm.graph.erase_node(slice_node)
+
+            gm.graph.erase_node(node)
+            changed = True
 
     return changed
 
@@ -407,11 +223,103 @@ def fuse_multiple_cat(gm: fx.GraphModule):
             )
         for idx, ori_node in enumerate(ori_nodes):
             with gm.graph.inserting_before(ori_node):
-                new_node = gm.graph.call_module(
-                    "mlu_triton_fused_slice_cat_to_all_slice",
-                    args=(new_nodes, slice_offsets[idx]),
+                new_node = gm.graph.create_node(
+                    op="call_function",
+                    name=f"slice_node_{ori_node.name}_{idx}",
+                    target=torch.ops.aten.slice.Tensor,
+                    args=(new_nodes, 1, slice_offsets[idx][0], slice_offsets[idx][1]),
+                    kwargs=None,
                 )
                 ori_node.replace_all_uses_with(new_node)
+    return changed
+
+
+class FuseSliceTogetherReplacement(nn.Module):
+    def forward(self, input_tensor, slices_index, slice_len):
+        if len(input_tensor.shape) != 2:
+            raise NotImplementedError("input must be 2d")
+        if slice_len > input_tensor.shape[-1]:
+            raise NotImplementedError(
+                f"inputshape {input_tensor.shape} don't support slice_len:{slice_len}"
+            )
+        slices_index = torch.tensor(
+            slices_index, dtype=torch.int32, device=input_tensor.device
+        )
+        output = mlu_triton_fused_slice_low(
+            input_tensor,
+            slices_index,
+            slice_len,
+            input_tensor.shape[0],
+            input_tensor.stride(0),
+        )
+        return output
+
+
+def custom_getitem(tensor_list, index):
+    return tensor_list[index]
+
+
+def fuse_slice_together(gm: fx.GraphModule):
+    changed = False
+    gm.add_submodule("mlu_triton_fused_slice_together", FuseSliceTogetherReplacement())
+
+    def divide_nodes_in_slice_len(nodes):
+        divide_nodes = {}
+        for n in nodes:
+            slice_len = n.args[3] - n.args[2]
+            if slice_len not in divide_nodes:
+                divide_nodes[slice_len] = []
+            divide_nodes[slice_len].append((n, n.args[2]))
+        return divide_nodes
+
+    candi_nodes = {}
+    for node in gm.graph.nodes:
+        if not check_slice_op(node):
+            continue
+        if len(node.users) == 1:
+            if next(iter(node.users)).target == "output":
+                continue
+        if node.args[0] not in candi_nodes:
+            candi_nodes[node.args[0]] = []
+        candi_nodes[node.args[0]].append(node)
+
+    """
+    result_node = list(gm.graph.nodes)[-1]
+    merge_nodes = {}
+    for n in result_node.args[0]:
+        if not check_slice_op(n):
+            continue
+        if len(n.users) != 1: 
+            continue
+        if n.args[1] != 1:
+            continue
+        if n.args[0] not in merge_nodes:
+            merge_nodes[n.args[0]] = []
+        merge_nodes[n.args[0]].append(n)
+    """
+    for src_node, nodes in candi_nodes.items():
+        divide_nodes = divide_nodes_in_slice_len(nodes)
+        for slice_len, nodes2 in divide_nodes.items():
+            if len(nodes2) < 3:
+                continue
+            start_indices = [n[1] for n in nodes2]
+            replace_n = [n[0] for n in nodes2]
+            with gm.graph.inserting_before(replace_n[0]):
+                new_node = gm.graph.call_module(
+                    "mlu_triton_fused_slice_together",
+                    args=(src_node, start_indices, slice_len),
+                )
+            for idx, n in enumerate(replace_n):
+                with gm.graph.inserting_before(n):
+                    new_n = gm.graph.create_node(
+                        op="call_function",
+                        target=custom_getitem,
+                        args=(new_node, idx),
+                        name=f"getitem_node_{new_node.name}_{n.name}",
+                    )
+                n.replace_all_uses_with(new_n)
+                gm.graph.erase_node(n)
+            changed = True
     return changed
 
 
@@ -422,32 +330,17 @@ class FusedSlice(Pattern):
             "mlu_triton_fuse_slice_cat_same_input_module",
             FuseSliceCatSameInputReplacement(),
         )
-        # gm.add_submodule(
-        #     "mlu_triton_fuse_slice_cat_mixed_input_module",
-        #     FuseSliceCatMixedInputReplacement(),
-        # )
         gm.add_submodule("expand_transpose_module", ExpandTransReplacement())
-        gm.add_submodule("mlu_triton_fused_slice_cat_to_all_slice", SliceReplacement())
         gm.add_submodule("mlu_triton_fused_cat", CatReplacement())
         gm.add_submodule("mlu_triton_fused_stack", MergeCatReplacement())
 
-        # slice & cat, all the slice ops are spliting from the same tensor.
-        changed = changed | fuse_slice_cat_with_same_input(gm)
-
-        # slice & cat, the slice ops are spliting from different tensors.
-        # changed = changed | fuse_slice_cat_with_mixed_input(gm)
-
         # slice & cat, the inputs of cat are mixed with slice and other ops.
-        changed = changed | fuse_mixed_ops_and_cat(gm)
-
-        # slice & stack, all the slice ops are spliting from the same tensor.
-        changed = changed | fuse_slice_stack_same_input(gm)
-
-        # slice & stack, the inputs of stack are mixed with slice and other ops.
-        changed = changed | fuse_mixed_ops_and_stack(gm)
+        changed = changed | fuse_mixed_ops_and_catstack(gm)
 
         # merge multiple cat ops into one
         changed = changed | fuse_multiple_cat(gm)
+
+        changed = changed | fuse_slice_together(gm)
 
         gm.graph.lint()
         gm.recompile()

@@ -217,30 +217,6 @@ def fn3(x):
     return (c, d)
 
 
-def fn4(x):
-    a, b = x
-    axis = -1
-    c = torch.cat(
-        [
-            a[:, 34691:34755],
-            a[:, 38371:38435],
-            a[:, 41479:41543],
-            b[:, 33535:33599],
-            a[:, 34065:34129],
-            a[:, 39415:39479],
-            b[:, 40264:40328],
-            b[:, 24347:24411],
-            a[:, 23854:23918],
-            b[:, 23361:23425],
-            b[:, 34691:34755],
-            b[:, 38371:38435],
-            b[:, 41479:41543],
-        ],
-        axis,
-    )
-    return (c, 1)
-
-
 def fn5(x):
     axis = -1
     b = x.clone()
@@ -266,6 +242,7 @@ def fn6(x):
             b,
             x[:, 34691:34755],
             d[:, 38371:38435],
+            d[:, 38371:38437],
         ],
         1,
     )
@@ -314,13 +291,68 @@ def fn8(x):
     return (c, 1)
 
 
+def fn9(x):
+    c = aten.cat(
+        [
+            x[:, 43106 - 2 : 9223372036854775807],
+            x[:, 43106 - 2 : 9223372036854775807],
+        ],
+        1,
+    )
+    return (c, 1)
+
+
+def fn10(x):
+    c = aten.cat(
+        [
+            x[:, 43106 - 2 :],
+            x[:, 43106 - 2 :],
+        ],
+        1,
+    )
+    return (c, 1)
+
+
+def fn11(x):
+    c = aten.cat(
+        [
+            x[:, 43106 - 2 : -1],
+            x[:, 43106 - 2 : -1],
+        ],
+        1,
+    )
+    return (c, 1)
+
+
+def fn12(x):
+    x1 = x[:, 34691:34755] + 1
+    x2 = x[:, 38371:38435] + 1
+    x3 = x[:, 41479:41543] + 1
+    x4 = x[:, 33535:33599] + 1
+    x5 = x[:, 34065:34129] + 1
+    x6 = x[:, 39415:39479] + 1
+    x7 = x[:, 40264:40328] + 1
+    x8 = x[:, 24347:24411] + 1
+    x9 = x[:, 23854:23918] + 1
+    x10 = x[:, 23361:23425] + 1
+    x11 = x[:, 34691:34755] + 1
+    x12 = x[:, 38371:38435] + 1
+    return x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12
+
+
+def fn13(x):
+    x1 = x[:, 0:64] + 1
+    x2 = x[:, 64:128] + 1
+    x3 = x[:, 128:192] + 1
+    x4 = x[:, 192:256] + 1
+    x5 = x[:, 256:384] + 1
+    x6 = x[:, 384:512] + 1
+    x7 = x[:, 512:640] + 1
+    return x1, x2, x3, x4, x5, x6, x7
+
+
 def slice_test(xpu_graph, func):
-    if func in [fn4]:
-        a = torch.randn(10, 43106).to(device=device)
-        b = torch.randn(10, 43106).to(device=device)
-        a = (a, b)
-    else:
-        a = torch.randn(10, 43106).to(device=device)
+    a = torch.randn(10, 43106).to(device=device)
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
     res = compiled(a)[0]
     res1 = func(a)[0]
@@ -336,17 +368,7 @@ class TestSlice:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [
-            fn0,
-            fn1,
-            fn2,
-            fn3,
-            fn4,
-            fn5,
-            fn6,
-            fn7,
-            fn8,
-        ],
+        [fn0, fn1, fn2, fn3, fn5, fn6, fn7, fn8, fn9, fn10, fn11, fn12, fn13],
     )
     def test_slice_patterns(self, pattern_func):
         slice_test(self.xpu_graph, pattern_func)
