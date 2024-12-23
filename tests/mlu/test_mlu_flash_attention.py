@@ -1,9 +1,9 @@
 import math
 import pytest
-
 import torch
 import xpu_graph
-from xpu_graph.test_utils import is_similar
+from xpu_graph.config import OptLevel
+from xpu_graph.test_utils import assertTensorsEqual
 
 
 def _sfdp_pattern_1(query, key, value, inv_scale):
@@ -11,6 +11,20 @@ def _sfdp_pattern_1(query, key, value, inv_scale):
     return (
         torch.matmul(query, key.transpose(-2, -1))
         .div(inv_scale)
+        .softmax(dim=-1)
+        .matmul(value)
+    )
+
+
+def _sfdp_pattern_1_1(query, key, value, inv_scale):
+    # query:bsz, self.num_heads, q_len, head_dim
+    return (
+        torch.matmul(query, key.transpose(-2, -1))
+        .div(
+            torch.clamp(
+                torch.tensor([inv_scale], dtype=query.dtype, device=query.device), 0, 20
+            )
+        )
         .softmax(dim=-1)
         .matmul(value)
     )
@@ -60,6 +74,14 @@ def _sfdp_pattern_5(query, key, value, attn_mask):
 def _sfdp_pattern_6(query, key, value, attn_mask, dropout_p=0.0):
     attn_weight = torch.softmax(
         (query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))) + attn_mask, dim=-1
+    )
+    attn_weight = torch.dropout(attn_weight, dropout_p, True)
+    return attn_weight @ value
+
+
+def _sfdp_pattern_6_1(query, key, value, attn_mask, dropout_p=0.0):
+    attn_weight = torch.softmax(
+        (query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))) - attn_mask, dim=-1
     )
     attn_weight = torch.dropout(attn_weight, dropout_p, True)
     return attn_weight @ value
@@ -305,6 +327,7 @@ def fa_test(xpu_graph_backend, func):
     softmax_scale = None
     if func in [
         _sfdp_pattern_1,
+        _sfdp_pattern_1_1,
         _sfdp_pattern_3,
         _sfdp_pattern_11,
         _sfdp_pattern_12,
@@ -318,12 +341,14 @@ def fa_test(xpu_graph_backend, func):
 
     if func in [
         _sfdp_pattern_1,
+        _sfdp_pattern_1_1,
         _sfdp_pattern_2,
         _sfdp_pattern_3,
         _sfdp_pattern_4,
         _sfdp_pattern_5,
         _sfdp_pattern_5_1,
         _sfdp_pattern_6,
+        _sfdp_pattern_6_1,
         _sfdp_pattern_13,
         _sfdp_pattern_transformer_1,
         _sfdp_pattern_transformer_2,
@@ -348,6 +373,7 @@ def fa_test(xpu_graph_backend, func):
     if func in [
         _sfdp_pattern_5,
         _sfdp_pattern_6,
+        _sfdp_pattern_6_1,
         _sfdp_pattern_14,
         _sfdp_pattern_16,
         _sfdp_pattern_transformer_2,
@@ -362,13 +388,16 @@ def fa_test(xpu_graph_backend, func):
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res = compiled(*args)
 
-    assert is_similar(res1.float(), res.float())
+    assertTensorsEqual(
+        res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True
+    )
 
 
 class TestFA:
     def setup_class(self):
         config = xpu_graph.config.XpuGraphConfig()
         config.target = xpu_graph.config.Target.mlu
+        config.opt_level = OptLevel.level2
         self.xpu_graph_backend = xpu_graph.compiler.XpuGraph(config)
 
     @pytest.mark.parametrize(
@@ -378,12 +407,14 @@ class TestFA:
             _sfdp_pattern_transformer_2,
             _sfdp_pattern_transformer_3,
             _sfdp_pattern_1,
+            _sfdp_pattern_1_1,
             _sfdp_pattern_2,
             _sfdp_pattern_3,
             _sfdp_pattern_4,
             _sfdp_pattern_5,
             _sfdp_pattern_5_1,
             _sfdp_pattern_6,
+            _sfdp_pattern_6_1,
             _sfdp_pattern_7,
             _sfdp_pattern_8,
             _sfdp_pattern_9,
@@ -393,5 +424,33 @@ class TestFA:
             _sfdp_pattern_13,
         ],
     )
-    def test_sfdp_patterns(self, pattern_func):
+    def test_sfdp_patterns(self, caplog, pattern_func):
         fa_test(self.xpu_graph_backend, pattern_func)
+        assert "Pattern.FusedFlashAttention changed graph" in caplog.text
+
+
+if __name__ == "__main__":
+    config = xpu_graph.config.XpuGraphConfig()
+    config.target = xpu_graph.config.Target.mlu
+    config.opt_level = OptLevel.level2
+    # config.vendor_compiler = {"mode": "reduce-overhead"}
+    xpu_graph = xpu_graph.compiler.XpuGraph(config)
+    fa_test(xpu_graph, _sfdp_pattern_1)
+    fa_test(xpu_graph, _sfdp_pattern_1_1)
+    fa_test(xpu_graph, _sfdp_pattern_2)
+    fa_test(xpu_graph, _sfdp_pattern_3)
+    fa_test(xpu_graph, _sfdp_pattern_4)
+    fa_test(xpu_graph, _sfdp_pattern_5)
+    fa_test(xpu_graph, _sfdp_pattern_6)
+    fa_test(xpu_graph, _sfdp_pattern_7)
+    fa_test(xpu_graph, _sfdp_pattern_8)
+    fa_test(xpu_graph, _sfdp_pattern_9)
+    fa_test(xpu_graph, _sfdp_pattern_10)
+    fa_test(xpu_graph, _sfdp_pattern_11)
+    fa_test(xpu_graph, _sfdp_pattern_12)
+    fa_test(xpu_graph, _sfdp_pattern_13)
+    fa_test(xpu_graph, _sfdp_pattern_5_1)
+    fa_test(xpu_graph, _sfdp_pattern_transformer_1)
+    fa_test(xpu_graph, _sfdp_pattern_transformer_2)
+    fa_test(xpu_graph, _sfdp_pattern_transformer_3)
+    fa_test(xpu_graph, _sfdp_pattern_6_1)

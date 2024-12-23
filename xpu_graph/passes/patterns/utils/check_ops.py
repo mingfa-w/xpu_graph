@@ -13,8 +13,17 @@ def get_input_node(node, idx):
 
 def get_actual_node(node, idx):
     new_node = node.args[idx]
-    if check_copy_op(new_node):
-        return new_node.args[0]
+    changed1 = True
+    while changed1:
+        changed1 = False
+        if check_copy(new_node):
+            changed1 = True
+        if check_view(new_node):
+            changed1 = True
+        if check_clone(new_node):
+            changed1 = True
+        if changed1:
+            new_node = new_node.args[0]
     return new_node
 
 
@@ -56,6 +65,32 @@ def check_meta_2d(node: fx.Node) -> bool:
     if len(node.meta["tensor_meta"].shape) == 2:
         return True
     return False
+
+
+def get_shape(node: fx.Node):
+    return node.meta["tensor_meta"].shape
+
+
+def get_dtype(node: fx.Node):
+    return node.meta["tensor_meta"].dtype
+
+
+def check_sub_or_add_op(
+    node: fx.Node,
+) -> tuple[bool, fx.Node | None, tuple[fx.Node | None, bool] | None]:
+    if not _is_valid_node(node):
+        return False, None, ()
+
+    if node.target not in [
+        torch.ops.aten.add.Tensor,
+        torch.ops.aten.sub.Tensor,
+    ]:
+        return False, None, ()
+
+    is_add = node.target == torch.ops.aten.add.Tensor
+    node0 = get_input_node(node, 0)
+    node1 = get_input_node(node, 1)
+    return True, node0, (node1, is_add)
 
 
 def check_div_or_mul_op(
@@ -103,7 +138,11 @@ def check_view(node):
 
 
 def check_softmax_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten._softmax.default)
+    if (not check_op(node, torch.ops.aten._safe_softmax.default)) and (
+        not check_op(node, torch.ops.aten._softmax.default)
+    ):
+        return False
+    return True
 
 
 def check_cat_op(node: fx.Node) -> bool:
@@ -144,8 +183,12 @@ def check_act_op(
     return False, None
 
 
-def check_copy_op(node: fx.Node) -> bool:
+def check_copy(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten._to_copy.default)
+
+
+def check_clone(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten.clone.default)
 
 
 def check_getitem_op(node: fx.node) -> bool:
