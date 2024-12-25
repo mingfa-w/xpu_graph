@@ -9,81 +9,108 @@ from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
 from ...utils.check_ops import (
     check_add_op,
-    check_layernorm_op,
+    check_norm_op,
     check_view,
     check_getitem_op,
 )
 
 
-class FusedLayerNormReplacement(nn.Module):
-    def forward(self, input, residual, weight, bias, residual_bias, eps):
+class FusedNormReplacement(nn.Module):
+    def forward(self, input, residual, weight, bias, residual_bias, eps, norm_type):
         if bias is None:
-            bias = torch.empty_like(weight)
-        output = torch_mlu_ops.fused_layer_norm(
-            input,
-            residual,
-            weight,
-            bias,
-            None,
-            eps,
-            False,
-        )
+            bias = torch.zeros_like(weight)
+        if norm_type == "layer_norm":
+            output = torch_mlu_ops.fused_layer_norm(
+                input,
+                residual,
+                weight,
+                bias,
+                None,
+                eps,
+                False,
+            )
+        else:
+            output = torch_mlu_ops.fused_rms_norm(
+                input,
+                residual,
+                weight,
+                bias,
+                None,
+                eps,
+                False,
+            )
         return output
+
+
+def _is_add_norm(node: fx.Node, match_str: str):
+    layernorm_node = node
+    is_norm, norm_type = check_norm_op(layernorm_node)
+    if not is_norm:
+        return False, ()
+
+    if norm_type != match_str:
+        return False, ()
+
+    add_node = layernorm_node.args[0]
+    if not check_add_op(add_node):
+        return False, ()
+    # normalized_shape = layernorm_node.args[1]
+    weight = layernorm_node.args[2]
+    bias = layernorm_node.args[3]
+    eps = layernorm_node.args[4]
+
+    # TODO(yhj): if len(add_node.users) > 1: return residual
+    if len(add_node.users) != 1:
+        return False, ()
+
+    inputs = add_node.args[0]
+    residual = add_node.args[1]
+    return True, (inputs, residual, weight, bias, None, eps)
 
 
 def _is_add_layernorm(
     node: fx.Node,
 ) -> tuple[bool, Optional[fx.Node], Optional[fx.Node], Optional[fx.Node]]:
     if not check_getitem_op(node):
-        return (False, None, None, None, None, None, None)
-
-    layernorm_node = node.args[0]
-    if not check_layernorm_op(layernorm_node):
-        return (False, None, None, None, None, None, None)
-
-    add_node = layernorm_node.args[0]
-    if not check_add_op(add_node):
-        return (False, None, None, None, None, None, None)
-    # normalized_shape = layernorm_node.args[1]
-    weight = layernorm_node.args[2]
-    bias = layernorm_node.args[3]
-    eps = layernorm_node.args[4]
-
-    if len(add_node.users) == 1:
-        inputs = add_node.args[0]
-        residual = add_node.args[1]
-        inputs_shape = inputs.meta["tensor_meta"].shape
-        residual_shape = residual.meta["tensor_meta"].shape
-        return (True, inputs, residual, weight, bias, None, eps)
-    else:
-        # [TODO] if len(add_node.users) > 1: return residual
-        return (False, None, None, None, None, None, None)
+        return False, ()
+    return _is_add_norm(node.args[0], "layer_norm")
 
 
-class FusedLayerNorm(Pattern):
+def _is_add_rmsnorm(
+    node: fx.Node,
+) -> tuple[bool, Optional[fx.Node], Optional[fx.Node], Optional[fx.Node]]:
+    return _is_add_norm(node, "rms_norm")
+
+
+class FusedNorm(Pattern):
     _opt_level = OptLevel.level2
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
 
         graph_module.add_submodule(
-            "mlu_tmo_fused_layernorm_replacement", FusedLayerNormReplacement()
+            "mlu_tmo_fused_norm_replacement", FusedNormReplacement()
         )
+
         for node in reversed(graph_module.graph.nodes):
-            (
-                is_match,
-                inputs,
-                residual,
-                weight,
-                bias,
-                residual_bias,
-                eps,
-            ) = _is_add_layernorm(node)
+            is_match, params = _is_add_layernorm(node)
             if is_match:
                 with graph_module.graph.inserting_before(node):
                     new_node = graph_module.graph.call_module(
-                        "mlu_tmo_fused_layernorm_replacement",
-                        args=(inputs, residual, weight, bias, residual_bias, eps),
+                        "mlu_tmo_fused_norm_replacement",
+                        args=(params + ("layer_norm",)),
+                    )
+                node.replace_all_uses_with(new_node)
+                graph_module.graph.erase_node(node)
+                is_modified = True
+
+        for node in reversed(graph_module.graph.nodes):
+            is_match, params = _is_add_rmsnorm(node)
+            if is_match:
+                with graph_module.graph.inserting_before(node):
+                    new_node = graph_module.graph.call_module(
+                        "mlu_tmo_fused_norm_replacement",
+                        args=(params + ("rms_norm",)),
                     )
                 node.replace_all_uses_with(new_node)
                 graph_module.graph.erase_node(node)

@@ -6,6 +6,7 @@ from xpu_graph.config import OptLevel
 import torch_mlu_ops
 import xpu_graph
 from xpu_graph.test_utils import is_similar
+import pytest
 
 
 device = "mlu:0"
@@ -18,6 +19,7 @@ def fn0(inputs, residual, weight, bias):
     output = torch.layer_norm(
         inputs_, normalized_shape=[1024], weight=weight, bias=bias, eps=1e-5
     )
+    #tuple
     return output
 
 
@@ -37,7 +39,6 @@ class TestLayerNorm:
     def setup_class(self):
         config = xpu_graph.config.XpuGraphConfig()
         config.target = xpu_graph.config.Target.mlu
-        config.vendor_compiler = {"mode": "reduce-overhead"}
         config.opt_level = OptLevel.level2
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
 
@@ -50,4 +51,8 @@ class TestLayerNorm:
 
 
 if __name__ == "__main__":
-    pytest.main()
+    config = xpu_graph.config.XpuGraphConfig()
+    config.target = xpu_graph.config.Target.mlu
+    config.opt_level = OptLevel.level2
+    xpu_graph = xpu_graph.compiler.XpuGraph(config)
+    layernorm_test(xpu_graph, fn0)

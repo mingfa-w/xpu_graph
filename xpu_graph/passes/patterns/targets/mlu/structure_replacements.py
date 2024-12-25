@@ -5,7 +5,8 @@ import torch_mlu_ops
 
 
 class RMSNormModule(torch.nn.Module):
-    def forward(self, inputs, weights, epsilon):
+    # layernorm like
+    def forward(self, inputs, normalized_shape, weights, bias, epsilon):
         return torch_mlu_ops.fused_rms_norm(
             inputs, None, weights, None, None, epsilon, False
         )

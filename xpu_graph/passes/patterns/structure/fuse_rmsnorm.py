@@ -51,13 +51,6 @@ def _is_rmsnorm(
     return True, (weight_idx, add_node, mean_node, pow_node)
 
 
-class RMSNormModule(nn.Module):
-    def forward(self, inputs, weights, epsilon):
-        return torch_mlu_ops.fused_rms_norm(
-            inputs, None, weights, None, None, epsilon, False
-        )
-
-
 class FusedRMSNorm(Pattern):
     _opt_level = OptLevel.level2
 
@@ -87,7 +80,7 @@ class FusedRMSNorm(Pattern):
 
             with graph_module.graph.inserting_before(node):
                 rms_norm_node = graph_module.graph.call_module(
-                    "rms_norm_op", args=(input_node, weight_node, epsilon)
+                    "rms_norm_op", args=(input_node, None, weight_node, None, epsilon)
                 )
 
             node.replace_all_uses_with(rms_norm_node)

@@ -44,6 +44,13 @@ fn0 = RMSNorm1(hidden_size=(10,)).mlu()
 fn1 = RMSNorm2(hidden_size=(10,)).mlu()
 
 
+def fn2(hidden_states):
+    residual = hidden_states.clone()
+    input_ = hidden_states + residual
+    output = fn0(input_)
+    return output
+
+
 def rmsnorm_test(xpu_graph, func):
     with torch.no_grad():
         a = torch.randn(1, 10).mlu()
@@ -57,7 +64,6 @@ class TestRMSNorm:
     def setup_class(self):
         config = xpu_graph.config.XpuGraphConfig()
         config.target = xpu_graph.config.Target.mlu
-        config.vendor_compiler = {"mode": "reduce-overhead"}
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
 
     @pytest.mark.parametrize(
@@ -65,6 +71,7 @@ class TestRMSNorm:
         [
             fn0,
             fn1,
+            fn2,
         ],
     )
     def test_rmsnorm_patterns(self, pattern_func):
@@ -75,7 +82,7 @@ if __name__ == "__main__":
     config = xpu_graph.config.XpuGraphConfig()
     config.target = xpu_graph.config.Target.mlu
     config.opt_level = OptLevel.level2
-    config.vendor_compiler = {"mode": "reduce-overhead"}
     xpu_graph = xpu_graph.compiler.XpuGraph(config)
     rmsnorm_test(xpu_graph, fn0)
     rmsnorm_test(xpu_graph, fn1)
+    rmsnorm_test(xpu_graph, fn2)

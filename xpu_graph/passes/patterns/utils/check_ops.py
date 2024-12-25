@@ -168,6 +168,16 @@ def check_trans_op(node: fx.Node) -> bool:
 def check_t_op(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten.t.default)
 
+def check_copy(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten._to_copy.default)
+
+
+def check_clone(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten.clone.default)
+
+
+def check_getitem_op(node: fx.node) -> bool:
+    return check_op(node, operator.getitem)
 
 def check_act_op(
     node: fx.Node,
@@ -183,17 +193,13 @@ def check_act_op(
     return False, None
 
 
-def check_copy(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten._to_copy.default)
-
-
-def check_clone(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.clone.default)
-
-
-def check_getitem_op(node: fx.node) -> bool:
-    return check_op(node, operator.getitem)
-
-
-def check_layernorm_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.native_layer_norm.default)
+def check_norm_op(node: fx.node):
+    if not isinstance(node, fx.Node):
+        return False, None
+    if not (node.op == "call_function" or node.op == "call_module"):
+        return False, None
+    if node.target == torch.ops.aten.native_layer_norm.default:
+        return True, "layer_norm"
+    if node.target == "rms_norm_op":
+        return True, "rms_norm"
+    return False, None
