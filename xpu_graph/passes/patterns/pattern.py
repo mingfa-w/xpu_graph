@@ -4,13 +4,25 @@ import torch.fx as fx
 import re
 import os
 import inspect
+from enum import Enum
 
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.utils import logger
 
+class PatternGroup(Enum):
+    GROUP0 = 0
+    GROUP1 = 1
+    GROUP2 = 2
+
+    def __lt__(self, other):
+        if isinstance(other, PatternGroup):
+            return self.value < other.value
+        return NotImplemented
+
 class Pattern(Optimizer):
     _opt_level = OptLevel.level0
+    _pattern_group = PatternGroup.GROUP0
 
     def __init__(self):
         super().__init__()

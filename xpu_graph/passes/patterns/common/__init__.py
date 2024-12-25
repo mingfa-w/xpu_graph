@@ -1,12 +1,16 @@
 import pkgutil
 import importlib
 
-from xpu_graph.passes.patterns.pattern import Pattern, AutoMatchPattern
+from xpu_graph.passes.patterns.pattern import Pattern, AutoMatchPattern, PatternGroup
 from xpu_graph.config import XpuGraphConfig
 from xpu_graph.utils import logger
 
 def get_all_patterns(config: XpuGraphConfig):
-    patterns = []
+    patterns = {
+        PatternGroup.GROUP0: [],
+        PatternGroup.GROUP1: [],
+        PatternGroup.GROUP2: [],
+    }
 
     for _, module_name, _ in pkgutil.iter_modules(__path__):
         module = importlib.import_module(f"{__name__}.{module_name}")
@@ -18,8 +22,9 @@ def get_all_patterns(config: XpuGraphConfig):
                 pat not in (Pattern, AutoMatchPattern) and\
                 pat._opt_level <= config.opt_level:
 
-                patterns.append(pat())
+                patterns[pat._pattern_group].append(pat())
 
-    logger.debug(f"xpu_graph enable builtin common converters: {[pat.__class__.__name__ for pat in patterns]}")
+    for group, group_patterns in patterns.items():
+        logger.debug(f"xpu_graph enable builtin common {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}")
 
     return patterns
