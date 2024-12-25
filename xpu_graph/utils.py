@@ -15,7 +15,8 @@ def setup_logger(loglevel):
     handler.setFormatter(fmt)
     logger.addHandler(handler)
     logger.setLevel(loglevel)
-    logger.propagate = False
+    #TODO(zjh)
+    #logger.propagate = False
 
 
 def xpu_timer(func):

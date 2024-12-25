@@ -89,7 +89,6 @@ class FusedLayerNorm(Pattern):
                 graph_module.graph.erase_node(node)
                 is_modified = True
 
-        print(graph_module.graph)
         graph_module.graph.lint()
         graph_module.recompile()
         return is_modified

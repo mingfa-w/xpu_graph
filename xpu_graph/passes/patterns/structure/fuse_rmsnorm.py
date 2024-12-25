@@ -13,7 +13,6 @@ from ..utils.check_ops import (
     check_pow_op,
     check_mean_op,
     check_rsqrt_op,
-    check_copy_op,
     get_input_node,
     get_actual_node,
 )
