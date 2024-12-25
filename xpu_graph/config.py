@@ -50,7 +50,6 @@ class XpuGraphConfig:
     debug: bool = False
     target: Target = field(default=Target.none)
     opt_level: OptLevel = OptLevel.level1
-    # execute_mode: ExecuteMode = ExecuteMode.eager
     dump_graph: bool = False
     use_xpu_ops: bool = False  # Use xpu_ops or not
     freeze: bool = False  # Freeze parameter, will do better constant_folding

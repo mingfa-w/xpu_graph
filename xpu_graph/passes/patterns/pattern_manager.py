@@ -5,33 +5,42 @@ import torch.fx as fx
 
 from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.config import XpuGraphConfig, Target
-from .pattern import Pattern
-from xpu_graph.utils import logger
+from .pattern import Pattern, PatternGroup
 
 class PatternManager(Optimizer):
     def __init__(self, config: XpuGraphConfig):
         super().__init__()
 
-        self._patterns = []
+        self._patterns = {
+            PatternGroup.GROUP0: [],
+            PatternGroup.GROUP1: [],
+            PatternGroup.GROUP2: [],
+        }
 
         from .common import get_all_patterns as get_common_patterns
-        self._patterns += get_common_patterns(config)
+        for group, patterns in get_common_patterns(config).items():
+            self._patterns[group] += patterns
 
         from .structure import get_all_patterns as get_structure_patterns
-        self._patterns += get_structure_patterns(config)
+        for group, patterns in get_structure_patterns(config).items():
+            self._patterns[group] += patterns
 
         if config.use_xpu_ops:
             from .xpu_ops import get_all_patterns as get_xpu_ops_patterns
-            self._patterns += get_xpu_ops_patterns(config)
+            for group, patterns in get_xpu_ops_patterns(config).items():
+                self._patterns[group] += patterns
 
         from .targets import get_all_patterns as get_target_patterns
-        self._patterns += get_target_patterns(config)
-
+        for group, patterns in get_target_patterns(config).items():
+            self._patterns[group] += patterns
 
     def process(self, gm: fx.GraphModule) -> bool:
         changed = False
-        for pattern in self._patterns:
-            changed = changed or pattern(gm)
+        loop_time = 5
+        for group in sorted(self._patterns):
+            for i in range(loop_time):
+                for pattern in self._patterns[group]:
+                    changed = changed or pattern(gm)
 
         return changed
 

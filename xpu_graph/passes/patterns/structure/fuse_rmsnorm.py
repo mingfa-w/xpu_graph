@@ -2,8 +2,6 @@ from typing import Optional
 
 import torch
 from torch import nn, fx
-import torch_mlu
-import torch_mlu_ops
 from typing import Callable
 from xpu_graph.config import OptLevel
 
