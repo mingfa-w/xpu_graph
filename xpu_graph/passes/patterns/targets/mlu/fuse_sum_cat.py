@@ -9,12 +9,12 @@ from ...utils.check_ops import (
     check_stack_op,
     check_slice_op,
 )
-from .triton_kernel.triton_fused_sum_cat import (
-    mlu_triton_fuse_sum_cat_2d,
-    mlu_triton_fuse_sum_cat_3d,
+from .triton_kernel.fused_sum_cat import (
+    fuse_sum_cat_2d,
+    fuse_sum_cat_3d,
 )
 
-from .triton_kernel.triton_fused_slice_sum_cat import mlu_triton_fuse_slice_sum_cat
+from .triton_kernel.fused_slice_sum_cat import fuse_slice_sum_cat
 
 
 class ConcatenateSumOperation2(nn.Module):
@@ -93,7 +93,7 @@ class SliceSumCatOperation(nn.Module):
         slice_tensor = torch.tensor(slice_, dtype=torch.int32, device=input.device)
         output_num = len(slice_param)
 
-        return mlu_triton_fuse_slice_sum_cat(
+        return fuse_slice_sum_cat(
             input, slice_tensor, processor_count, output_num
         )
 

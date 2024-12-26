@@ -40,8 +40,8 @@ def mlu_triton_slice_low_kernel(
     )
 
 
-@torch.library.custom_op("aten::mlu_triton_fused_slice_low", mutates_args=())
-def mlu_triton_fused_slice_low(
+@torch.library.custom_op("torch_mlu_triton::fused_slice_low", mutates_args=())
+def fused_slice_low(
     src_tensor: torch.Tensor,
     start_indices: torch.Tensor,
     slice_len: int,
@@ -71,8 +71,8 @@ def mlu_triton_fused_slice_low(
     return output_tensors
 
 
-@mlu_triton_fused_slice_low.register_fake
-def mlu_triton_fused_slice_low_fake(
+@fused_slice_low.register_fake
+def fused_slice_low_fake(
     src_tensor, start_indices, slice_len, n_rows, input_stride
 ):
     output_tensors = torch.empty(

@@ -197,3 +197,19 @@ def check_getitem_op(node: fx.node) -> bool:
 
 def check_layernorm_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.native_layer_norm.default)
+
+
+def check_mask_fill_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.masked_fill.Scalar)
+
+
+def check_eq_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.eq.Scalar)
+
+
+def check_repeat_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.repeat.default)
+
+
+def check_unsqueeze_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.unsqueeze.default)

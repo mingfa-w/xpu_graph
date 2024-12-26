@@ -3,12 +3,12 @@ import torch.fx as fx
 import torch_mlu
 import torch_mlu_ops
 
-from .triton_kernel.triton_fused_slice import (
-    mlu_triton_fused_slice_low,
+from .triton_kernel.fused_slice import (
+    fused_slice_low,
 )
 
-from .triton_kernel.triton_fused_slice_cat import (
-    mlu_triton_fused_slice_cat,
+from .triton_kernel.fused_slice_cat import (
+    fused_slice_cat,
 )
 
 class RMSNormModule(torch.nn.Module):
@@ -28,7 +28,7 @@ class FuseSliceModule(torch.nn.Module):
         slices_index = torch.tensor(
             slices_index, dtype=torch.int32, device=input_tensor.device
         )
-        output = mlu_triton_fused_slice_low(
+        output = fused_slice_low(
             input_tensor,
             slices_index,
             slice_len,
@@ -46,7 +46,7 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
         indices_tensor = torch.tensor(
             indices, dtype=torch.int32, device=input_tensor.device
         )
-        return mlu_triton_fused_slice_cat(
+        return fused_slice_cat(
             input_tensor,
             indices_tensor,
             rows,

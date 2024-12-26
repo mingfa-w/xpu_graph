@@ -127,9 +127,9 @@ def mlu_triton_sum_cat_2d_kernel(
 
 
 @torch.library.custom_op(
-    "aten::mlu_triton_fuse_sum_cat_2d", mutates_args={}, device_types="mlu"
+    "torch_mlu_triton::fuse_sum_cat_2d", mutates_args={}, device_types="mlu"
 )
-def mlu_triton_fuse_sum_cat_2d(
+def fuse_sum_cat_2d(
     inputs: List[torch.Tensor],
     lengths_tensor: torch.Tensor,
     dim_0: int,
@@ -169,8 +169,8 @@ def mlu_triton_fuse_sum_cat_2d(
     return output_tensor
 
 
-@mlu_triton_fuse_sum_cat_2d.register_fake
-def mlu_triton_fuse_sum_cat_2d_fake(
+@fuse_sum_cat_2d.register_fake
+def fuse_sum_cat_2d_fake(
     inputs: List[torch.Tensor],
     lengths_tensor: torch.Tensor,
     dim_0: int,
@@ -182,9 +182,9 @@ def mlu_triton_fuse_sum_cat_2d_fake(
 
 
 @torch.library.custom_op(
-    "aten::mlu_triton_fuse_sum_cat_3d", mutates_args=(), device_types="mlu"
+    "torch_mlu_triton::fuse_sum_cat_3d", mutates_args=(), device_types="mlu"
 )
-def mlu_triton_fuse_sum_cat_3d(
+def fuse_sum_cat_3d(
     inputs: List[torch.Tensor],
     dim_0: int,
     dim_1_tensor: torch.Tensor,
@@ -223,8 +223,8 @@ def mlu_triton_fuse_sum_cat_3d(
     return output_tensor
 
 
-@mlu_triton_fuse_sum_cat_3d.register_fake
-def mlu_triton_fuse_sum_cat_3d_fake(
+@fuse_sum_cat_3d.register_fake
+def fuse_sum_cat_3d_fake(
     inputs: List[torch.Tensor],
     dim_0: int,
     dim_1: torch.Tensor,

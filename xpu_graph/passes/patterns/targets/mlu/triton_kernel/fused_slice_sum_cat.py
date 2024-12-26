@@ -72,9 +72,9 @@ def mlu_triton_slice_sum_cat_kernel(
 
 
 @torch.library.custom_op(
-    "aten::mlu_triton_fuse_slice_sum_cat", mutates_args=(), device_types="mlu"
+    "torch_mlu_triton::fuse_slice_sum_cat", mutates_args=(), device_types="mlu"
 )
-def mlu_triton_fuse_slice_sum_cat(
+def fuse_slice_sum_cat(
     input_tensor: torch.Tensor,
     slice_tensor: torch.Tensor,
     processor_count: int,
@@ -123,8 +123,8 @@ def mlu_triton_fuse_slice_sum_cat(
     return output_tensor
 
 
-@mlu_triton_fuse_slice_sum_cat.register_fake
-def mlu_triton_fuse_slice_sum_cat_fake(
+@fuse_slice_sum_cat.register_fake
+def fuse_slice_sum_cat_fake(
     input_tensor: torch.Tensor,
     slice_tensor: torch.Tensor,
     processor_count: int,
