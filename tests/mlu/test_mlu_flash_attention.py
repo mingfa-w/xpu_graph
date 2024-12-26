@@ -435,6 +435,7 @@ if __name__ == "__main__":
     config.opt_level = OptLevel.level2
     # config.vendor_compiler = {"mode": "reduce-overhead"}
     xpu_graph = xpu_graph.compiler.XpuGraph(config)
+    """
     fa_test(xpu_graph, _sfdp_pattern_1)
     fa_test(xpu_graph, _sfdp_pattern_1_1)
     fa_test(xpu_graph, _sfdp_pattern_2)
@@ -454,3 +455,5 @@ if __name__ == "__main__":
     fa_test(xpu_graph, _sfdp_pattern_transformer_2)
     fa_test(xpu_graph, _sfdp_pattern_transformer_3)
     fa_test(xpu_graph, _sfdp_pattern_6_1)
+    """
+    fa_test(xpu_graph, _sfdp_pattern_10)

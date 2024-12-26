@@ -21,39 +21,42 @@ def get_model(model_name, dtype, device):
     return model, tokenizer
 
 
-@torch.no_grad()
 def pred(model, tokenizer, input_text):
     model_inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
 
-    config = xpu_graph.config.XpuGraphConfig()
-    config.target = xpu_graph.config.Target.mlu
-    config.opt_level = OptLevel.level2
-    #config.vendor_compiler = {"mode": "reduce-overhead"}
-    xpu_graph_ = xpu_graph.compiler.XpuGraph(config)
-    compiled = torch.compile(model, backend=xpu_graph_, dynamic=True)
+    with torch.no_grad():
+        config = xpu_graph.config.XpuGraphConfig()
+        config.target = xpu_graph.config.Target.mlu
+        config.opt_level = OptLevel.level2
+        # config.vendor_compiler = {"mode": "reduce-overhead"}
+        xpu_graph_ = xpu_graph.compiler.XpuGraph(config)
+        compiled = torch.compile(model, backend=xpu_graph_, dynamic=True)
 
-    result_eager = model(model_inputs.input_ids)
-
-    warmup = 50
-    loop = 1000
-
-    for i in range(warmup):
+        result_eager = model(model_inputs.input_ids)
         result_xpu_graph = compiled(model_inputs.input_ids)
-    torch.mlu.synchronize()
+        print("result_eager:", result_eager.logits)
+        print("result_xpu_graph:", result_xpu_graph.logits)
 
-    t1 = time.time()
-    for i in range(loop):
-        res1 = compiled(model_inputs.input_ids)
-    torch.mlu.synchronize()
-    t2 = time.time()
-    print(f"Xpu_graph cost {(t2 - t1)*1000./loop} ms")
+        warmup = 50
+        loop = 1000
 
-    t1 = time.time()
-    for i in range(loop):
-        res2 = model(model_inputs.input_ids)
-    torch.mlu.synchronize()
-    t2 = time.time()
-    print(f"Eager cost {(t2 - t1)*1000./loop} ms")
+        for i in range(warmup):
+            result_xpu_graph = compiled(model_inputs.input_ids)
+        torch.mlu.synchronize()
+
+        t1 = time.time()
+        for i in range(loop):
+            res1 = compiled(model_inputs.input_ids)
+        torch.mlu.synchronize()
+        t2 = time.time()
+        print(f"Xpu_graph cost {(t2 - t1)*1000./loop} ms")
+
+        t1 = time.time()
+        for i in range(loop):
+            res2 = model(model_inputs.input_ids)
+        torch.mlu.synchronize()
+        t2 = time.time()
+        print(f"Eager cost {(t2 - t1)*1000./loop} ms")
 
 
 def get_args():

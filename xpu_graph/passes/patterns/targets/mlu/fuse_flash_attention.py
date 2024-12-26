@@ -17,8 +17,17 @@ from ...utils.check_ops import (
     check_sub_or_add_op,
 )
 
+def calc_params(scale_params, params):
+    params = list(params)
+    if scale_params[0] == 1.0:
+        return params
+    if scale_params[1] == params[1]:
+        return [scale_params[0] * params[0], scale_params[1]]
+    else:
+        return [scale_params[0] / params[0], scale_params[1]]
 
-@torch.library.custom_op("torch_mlu::tmo_fa_forward", mutates_args=())
+
+
 def tmo_fa_forward(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -96,26 +105,6 @@ def tmo_fa_forward(
         if output.dtype != output_dtype:
             output = output.to(output_dtype)
         return output.view(output_shape)
-
-
-@tmo_fa_forward.register_fake
-def tmo_fa_forward_fake(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    attention_mask: torch.Tensor,
-    scale_factor: torch.Tensor,
-    is_division: bool,
-    is_add: bool,
-    output_shape: List[int],
-    output_dtype: torch.dtype,
-) -> torch.Tensor:
-    output_tensor = torch.empty(
-        output_shape,
-        dtype=output_dtype,
-        device=query.device,
-    )
-    return output_tensor
 
 
 class FlashAttentionReplacement(nn.Module):
@@ -213,9 +202,43 @@ def _is_fa(node: fx.Node):
         add_params[0] = bmm_1_node.args[2]
         add_params[1] = True
 
+    changed1 = True
+    query = bmm_1_node.args[0]
+    key = bmm_1_node.args[1]
+    while changed1:
+        changed1 = False
+        # (optional) find div or mul before query and key
+        is_scale_op, div_input_node_, params = check_div_or_mul_op(query)
+        if is_scale_op:
+            scale_params = calc_params(scale_params, params)
+            query = query.args[0]
+            changed1 = True
+        is_scale_op, div_input_node_, params = check_div_or_mul_op(key)
+        if is_scale_op:
+            scale_params = calc_params(scale_params, params)
+            key = key.args[0]
+            changed1 = True
+
+        # (optional) skip copy
+        if check_copy(query):
+            query = query.args[0]
+            changed1 = True
+        if check_copy(key):
+            key = key.args[0]
+            changed1 = True
+
+        '''
+        # (optional) skip key_trans
+        if validate_transpose_operation(key):
+            key_trans_list.append((key.args[1], key.args[2]))
+            key = key.args[0]
+            changed1 = True
+        '''
+
+
     return True, [
-        bmm_1_node.args[0],
-        bmm_1_node.args[1],
+        query,
+        key,
         node.args[1],
         scale_params,
         add_params,

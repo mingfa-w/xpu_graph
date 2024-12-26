@@ -102,6 +102,7 @@ def check_div_or_mul_op(
     if node.target not in [
         torch.ops.aten.div.Tensor,
         torch.ops.aten.mul.Tensor,
+        torch.ops.aten.mul.Scalar,
     ]:
         return False, None, ()
 
@@ -168,6 +169,7 @@ def check_trans_op(node: fx.Node) -> bool:
 def check_t_op(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten.t.default)
 
+
 def check_copy(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten._to_copy.default)
 
@@ -178,6 +180,7 @@ def check_clone(node: fx.Node) -> bool:
 
 def check_getitem_op(node: fx.node) -> bool:
     return check_op(node, operator.getitem)
+
 
 def check_act_op(
     node: fx.Node,
