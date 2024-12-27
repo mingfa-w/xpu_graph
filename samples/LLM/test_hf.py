@@ -1,6 +1,5 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-import torch_mlu
 import xpu_graph
 from xpu_graph.compiler import XpuGraph
 from xpu_graph.config import XpuGraphConfig
@@ -12,15 +11,23 @@ import argparse
 import torch
 
 
-def infer_loop(model, input, warmup=50, loop=1000):
+def device_sync(device: torch.device):
+    """Synchronize device."""
+    if device.type == "mlu":
+        torch.mlu.synchronize()
+    elif device.type == "cuda":
+        torch.cuda.synchronize()
+
+
+def infer_loop(model, input, warmup=3, loop=100):
     for i in range(warmup):
         result_xpu_graph = model(input)
-    torch.mlu.synchronize()
+    device_sync(model.device)
 
     t1 = time.time()
     for i in range(loop):
         res1 = model(input)
-    torch.mlu.synchronize()
+    device_sync(model.device)
     t2 = time.time()
     return (t2 - t1) * 1000.0 / loop  # ms
 
@@ -34,27 +41,37 @@ def get_model(model_name, dtype, device):
     return model, tokenizer
 
 
-def pred(model, tokenizer, input_text):
-    model_inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
-
+def pred(model, input_ids):
     with torch.no_grad():
         config = xpu_graph.config.XpuGraphConfig()
         config.target = xpu_graph.config.Target.mlu
         config.opt_level = OptLevel.level2
-        # config.vendor_compiler = {"mode": "reduce-overhead"}
         xpu_graph_ = xpu_graph.compiler.XpuGraph(config)
         compiled = torch.compile(model, backend=xpu_graph_, dynamic=True)
 
-        result_eager = model(model_inputs.input_ids)
-        result_xpu_graph = compiled(model_inputs.input_ids)
+        result_eager = model(input_ids)
+        result_xpu_graph = compiled(input_ids)
         print("result_eager:", result_eager.logits)
         print("result_xpu_graph:", result_xpu_graph.logits)
 
-        dur = infer_loop(model, model_inputs.input_ids)
+        dur = infer_loop(model, input_ids)
         print(f"Eager cost {dur} ms")
 
-        dur = infer_loop(compiled, model_inputs.input_ids)
+        dur = infer_loop(compiled, input_ids)
         print(f"Xpu_graph cost {dur} ms")
+
+        """
+        compiled2 = torch.compile(model, mode="reduce-overhead")
+        config.vendor_compiler = {"mode": "reduce-overhead"}
+        xpu_graph_ = xpu_graph.compiler.XpuGraph(config)
+        compiled3 = torch.compile(model, backend=xpu_graph_, dynamic=True)
+
+        dur = infer_loop(compiled2, input_ids)
+        print(f"Inductor cost {dur} ms")
+
+        dur = infer_loop(compiled3, input_ids)
+        print(f"Xpu_graph + inductor cost {dur} ms")
+        """
 
 
 def get_args():
@@ -91,4 +108,15 @@ if __name__ == "__main__":
     args = get_args()
     model, tokenizer = get_model(args.model_path, args.model_dtype, args.device)
     input_text = "Born in north-east France, Soyer trained as a"
-    pred(model, tokenizer, input_text)
+    tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+
+    input_lens = [1024, 2048]
+    for input_len in input_lens:
+        model_inputs = tokenizer(
+            input_text,
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+            max_length=input_len,
+        ).to(model.device)
+        pred(model, model_inputs.input_ids)
