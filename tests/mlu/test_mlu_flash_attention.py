@@ -102,6 +102,23 @@ def _sfdp_pattern_7(query, key, value, dropout_p=0.0):
     return attn_weight @ v
 
 
+def _sfdp_pattern_7_1(query, key, value, dropout_p=0.0):
+    # in real workloads inputs to matmul are permuted
+    # causing matmul to expand to a series of expand and clone calls
+    # we want the same to happen during pattern tracing
+    q = query.permute(0, 2, 1, 3)
+    k = key.permute(0, 2, 1, 3)
+    v = value.permute(0, 2, 1, 3)
+    div = q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))
+    div = div.to(torch.float32)
+    attn_weight = torch.softmax(div, dim=-1)
+    attn_weight = torch.dropout(attn_weight, dropout_p, True)
+    attn_weight = attn_weight.to(torch.float16)
+    output = attn_weight @ v
+    output = output.transpose(1, 2)
+    return output
+
+
 def _sfdp_pattern_8(query, key, value):
     # no dropout version of pattern 7
     q = query.permute(0, 2, 1, 3)
@@ -407,7 +424,7 @@ class TestFA:
             _sfdp_pattern_transformer_2,
             _sfdp_pattern_transformer_3,
             _sfdp_pattern_1,
-            _sfdp_pattern_1_1,
+            # _sfdp_pattern_1_1,
             _sfdp_pattern_2,
             _sfdp_pattern_3,
             _sfdp_pattern_4,
@@ -416,6 +433,7 @@ class TestFA:
             _sfdp_pattern_6,
             _sfdp_pattern_6_1,
             _sfdp_pattern_7,
+            _sfdp_pattern_7_1,
             _sfdp_pattern_8,
             _sfdp_pattern_9,
             _sfdp_pattern_10,
@@ -456,4 +474,4 @@ if __name__ == "__main__":
     fa_test(xpu_graph, _sfdp_pattern_transformer_3)
     fa_test(xpu_graph, _sfdp_pattern_6_1)
     """
-    fa_test(xpu_graph, _sfdp_pattern_10)
+    fa_test(xpu_graph, _sfdp_pattern_7_1)

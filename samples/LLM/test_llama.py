@@ -12,6 +12,19 @@ import argparse
 import torch
 
 
+def infer_loop(model, input, warmup=50, loop=1000):
+    for i in range(warmup):
+        result_xpu_graph = model(input)
+    torch.mlu.synchronize()
+
+    t1 = time.time()
+    for i in range(loop):
+        res1 = model(input)
+    torch.mlu.synchronize()
+    t2 = time.time()
+    return (t2 - t1) * 1000.0 / loop  # ms
+
+
 def get_model(model_name, dtype, device):
     model = AutoModelForCausalLM.from_pretrained(
         model_name, torch_dtype=dtype, device_map=device
@@ -37,26 +50,11 @@ def pred(model, tokenizer, input_text):
         print("result_eager:", result_eager.logits)
         print("result_xpu_graph:", result_xpu_graph.logits)
 
-        warmup = 50
-        loop = 1000
+        dur = infer_loop(model, model_inputs.input_ids)
+        print(f"Eager cost {dur} ms")
 
-        for i in range(warmup):
-            result_xpu_graph = compiled(model_inputs.input_ids)
-        torch.mlu.synchronize()
-
-        t1 = time.time()
-        for i in range(loop):
-            res1 = compiled(model_inputs.input_ids)
-        torch.mlu.synchronize()
-        t2 = time.time()
-        print(f"Xpu_graph cost {(t2 - t1)*1000./loop} ms")
-
-        t1 = time.time()
-        for i in range(loop):
-            res2 = model(model_inputs.input_ids)
-        torch.mlu.synchronize()
-        t2 = time.time()
-        print(f"Eager cost {(t2 - t1)*1000./loop} ms")
+        dur = infer_loop(compiled, model_inputs.input_ids)
+        print(f"Xpu_graph cost {dur} ms")
 
 
 def get_args():
