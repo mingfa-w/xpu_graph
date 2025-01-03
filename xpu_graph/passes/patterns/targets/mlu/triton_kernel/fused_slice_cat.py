@@ -23,8 +23,8 @@ def mlu_triton_slice_cat_kernel(
     tl.store(output_ptr + output_offset, data, mask=mask)
 
 
-@torch.library.custom_op("aten::mlu_triton_fused_slice_cat", mutates_args=())
-def mlu_triton_fused_slice_cat(
+@torch.library.custom_op("torch_mlu_triton::fused_slice_cat", mutates_args=())
+def fused_slice_cat(
     input_tensor: torch.Tensor,
     indices_tensor: torch.Tensor,
     n_rows: int,
@@ -47,8 +47,8 @@ def mlu_triton_fused_slice_cat(
     return output_tensor
 
 
-@mlu_triton_fused_slice_cat.register_fake
-def mlu_triton_fused_slice_cat_fake(
+@fused_slice_cat.register_fake
+def fused_slice_cat_fake(
     input_tensor, indices_tensor, n_rows, elements, input_stride, block_size
 ):
     return torch.empty(n_rows, elements, device=input_tensor.device)
