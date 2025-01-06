@@ -4,6 +4,7 @@ import torch.fx as fx
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.check_ops import check_cat_op
 
+
 class FoldCat(Pattern):
     def process(self, gm: fx.GraphModule):
         changed = False
@@ -26,13 +27,14 @@ class FoldCat(Pattern):
         gm.recompile()
         return changed
 
+
 class FoldCatCat(Pattern):
     def process(self, gm: fx.GraphModule):
         changed = False
         for node in reversed(gm.graph.nodes):
-            if not check_cat_op(node):
+            is_cat, cat_axis = check_cat_op(node)
+            if not is_cat:
                 continue
-            cat_axis = node.args[1]
             if node.meta == {}:
                 continue
             if cat_axis == len(node.meta["tensor_meta"].shape) - 1:
@@ -40,8 +42,8 @@ class FoldCatCat(Pattern):
             cat_input = []
             changed1 = False
             for m in node.args[0]:
-                if check_cat_op(m):
-                    cat_axis1 = m.args[1]
+                is_cat1, cat_axis1 = check_cat_op(m)
+                if is_cat1:
                     if cat_axis1 == len(m.meta["tensor_meta"].shape) - 1:
                         cat_axis1 = -1
                     if (len(m.users) == 1) and (cat_axis == cat_axis1):

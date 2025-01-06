@@ -18,11 +18,11 @@ from .triton_kernel.fused_slice_sum_cat import fuse_slice_sum_cat
 
 
 class ConcatenateSumOperation2(nn.Module):
-    def forward(self, inputs, sum_dim, concat_dim):
+    def forward(self, inputs, sum_dim, cat_axis):
         if sum_dim != [1]:
             raise NotImplementedError("sum_dim must be 1")
-        if concat_dim != -1:
-            raise NotImplementedError("concat_dim must be -1")
+        if cat_axis != -1:
+            raise NotImplementedError("cat_axis must be -1")
 
         batch_size, _, feature_dim = inputs[0].shape
         device = inputs[0].device
@@ -44,15 +44,13 @@ class ConcatenateSumOperation2(nn.Module):
 
 
 class ConcatenateSumOperation1(nn.Module):
-    def forward(
-        self, inputs, sum_dim, concat_mode, keep_dims, concat_dim, is_concat=True
-    ):
+    def forward(self, inputs, sum_dim, concat_mode, keep_dims, cat_axis, is_cat=True):
         batch_size = inputs[0].shape[0]
         device = inputs[0].device
         sequence_lengths = [tensor.shape[1] for tensor in inputs]
         max_sequence_length = max(sequence_lengths)
         length_tensor = torch.tensor(sequence_lengths, dtype=torch.int32, device=device)
-        if keep_dims is True and concat_dim != 0:
+        if keep_dims is True and cat_axis != 0:
             output = mlu_triton_fuse_sum_cat_3d(
                 inputs,
                 batch_size,
@@ -68,7 +66,7 @@ class ConcatenateSumOperation1(nn.Module):
                 batch_size,
                 max_sequence_length,
             )
-            if is_concat and concat_dim == -1:
+            if is_cat and cat_axis == -1:
                 output = output.reshape([-1])
         return output
 
@@ -93,9 +91,7 @@ class SliceSumCatOperation(nn.Module):
         slice_tensor = torch.tensor(slice_, dtype=torch.int32, device=input.device)
         output_num = len(slice_param)
 
-        return fuse_slice_sum_cat(
-            input, slice_tensor, processor_count, output_num
-        )
+        return fuse_slice_sum_cat(input, slice_tensor, processor_count, output_num)
 
 
 # (slice->sum) * n
@@ -158,7 +154,8 @@ def find_slice_sum_cat(gm: fx.GraphModule):
         return changed
     # slice->sum->cat
     for node in gm.graph.nodes:
-        if not check_cat_op(node):
+        is_cat, _ = check_cat_op(node)
+        if not is_cat:
             continue
         ori_cat_input = node.args[0]
         is_match, range_, src_node, args = match_slice_sum_cat_pattern(
@@ -191,7 +188,7 @@ def find_slice_sum_cat(gm: fx.GraphModule):
     return changed
 
 
-def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, concat_dim):
+def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, cat_axis):
     if len(source_nodes) < 3:
         return False, None
 
@@ -213,23 +210,23 @@ def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, concat_dim
         return False, None
 
     has_keep_dims = bool(keep_dims)
-    is_concat = check_cat_op(node)
+    is_cat, _ = check_cat_op(node)
 
     sum_mode = 0
     concat_mode = 0
-    if is_concat:
+    if is_cat:
         if is_2d and has_keep_dims:
             pass
-        elif is_2d and not has_keep_dims and concat_dim == -1:
+        elif is_2d and not has_keep_dims and cat_axis == -1:
             concat_mode = 1
-        elif not is_2d and not has_keep_dims and concat_dim == -1:
+        elif not is_2d and not has_keep_dims and cat_axis == -1:
             sum_mode = 1
         else:
             return False, None
     else:  # stack
         if is_2d and not has_keep_dims:
             concat_mode = 1
-            concat_dim = 0
+            cat_axis = 0
         else:
             return False, None
 
@@ -242,8 +239,8 @@ def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, concat_dim
                     sum_dims[0],
                     concat_mode,
                     has_keep_dims,
-                    concat_dim,
-                    is_concat,
+                    cat_axis,
+                    is_cat,
                 ),
             )
         return True, new_node
@@ -254,7 +251,7 @@ def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, concat_dim
                 args=(
                     source_nodes,
                     sum_dims[0],
-                    concat_dim,
+                    cat_axis,
                 ),
             )
         return True, new_node
@@ -264,17 +261,15 @@ def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, concat_dim
 def process_match_sum_cat(gm: fx.GraphModule):
     changed = False
     for node in reversed(gm.graph.nodes):
-        concat_dim = 1
-        if check_cat_op(node) or check_stack_op(node):
-            is_concat = check_cat_op(node)
+        is_cat, cat_axis = check_cat_op(node)
+        if is_cat or check_stack_op(node):
             is_replace = False
             concat_input = []
-            if is_concat:
-                concat_dim = node.args[1]
+            if is_cat:
                 if node.meta == {}:
                     continue
-                if len(node.meta["tensor_meta"].shape) - 1 == concat_dim:
-                    concat_dim = -1
+                if len(node.meta["tensor_meta"].shape) - 1 == cat_axis:
+                    cat_axis = -1
             if len(node.args[0]) > 2:
                 n_list = []
                 sum_dims = []
@@ -290,7 +285,7 @@ def process_match_sum_cat(gm: fx.GraphModule):
                             keep_dims.append(n.args[2])
                     else:
                         match_, new_node = _validate_sum_concat(
-                            gm, node, source_nodes, sum_dims, keep_dims, concat_dim
+                            gm, node, source_nodes, sum_dims, keep_dims, cat_axis
                         )
                         if match_:
                             is_replace = True
@@ -303,7 +298,7 @@ def process_match_sum_cat(gm: fx.GraphModule):
                         source_nodes = []
                         keep_dims = []
                 match_, new_node = _validate_sum_concat(
-                    gm, node, source_nodes, sum_dims, keep_dims, concat_dim
+                    gm, node, source_nodes, sum_dims, keep_dims, cat_axis
                 )
                 if match_:
                     is_replace = True
@@ -320,7 +315,7 @@ def process_match_sum_cat(gm: fx.GraphModule):
                         concat_node = gm.graph.create_node(
                             op="call_function",
                             target=torch.ops.aten.cat.default,
-                            args=(concat_input, concat_dim),
+                            args=(concat_input, cat_axis),
                             name=node.name + "_1",
                         )
                     node.replace_all_uses_with(concat_node)

@@ -13,7 +13,7 @@ MAX_INT64 = 9223372036854775807
 
 
 class MergeCatReplacement(nn.Module):
-    def forward(self, input_tensor_list, axis=0):
+    def forward(self, input_tensor_list, cat_axis=0):
         return torch.cat(
             [
                 (
@@ -103,14 +103,13 @@ def match_sub_list(lst):
 def fuse_mixed_ops_and_catstack(graph_module: fx.GraphModule):
     changed = False
     for node in reversed(graph_module.graph.nodes):
-        is_cat = check_cat_op(node)
+        is_cat, cat_axis = check_cat_op(node)
         if (not check_stack_op(node)) and (not is_cat):
             continue
         if is_cat:
             if not check_meta_2d(node):
                 continue
-            axis = node.args[1]
-            if axis == 0:
+            if cat_axis == 0:
                 continue
         ori_cat_input = node.args[0]
         start, end = match_sub_list(ori_cat_input)

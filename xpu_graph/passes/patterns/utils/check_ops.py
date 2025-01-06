@@ -145,8 +145,15 @@ def check_softmax_op(node: fx.Node) -> bool:
     return True
 
 
-def check_cat_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.cat.default)
+def check_cat_op(node: fx.Node):
+    is_cat = check_op(node, torch.ops.aten.cat.default)
+    if is_cat:
+        if len(node.args) == 1:
+            return True, 0
+        else:
+            return True, node.args[1]
+    else:
+        return False, 0
 
 
 def check_slice_op(node: fx.Node) -> bool:
