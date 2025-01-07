@@ -11,11 +11,13 @@ from .triton_kernel.fused_slice_cat import (
     fused_slice_cat,
 )
 
+
 class RMSNormModule(torch.nn.Module):
     def forward(self, inputs, weights, epsilon):
         return torch_mlu_ops.fused_rms_norm(
             inputs, None, weights, None, None, epsilon, False
         )
+
 
 class FuseSliceModule(torch.nn.Module):
     def forward(self, input_tensor, slices_index, slice_len):
@@ -37,6 +39,7 @@ class FuseSliceModule(torch.nn.Module):
         )
         return output
 
+
 class FuseSliceCatSameInputModule(torch.nn.Module):
     def forward(self, input_tensor, slices):
         if len(input_tensor.shape) != 2:
@@ -54,6 +57,7 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
             input_tensor.stride(0),
             16384,  # blocksize
         )
+
 
 def get_structure_replacements():
     return {

@@ -51,13 +51,6 @@ def _is_rmsnorm(
     return True, (weight_idx, add_node, mean_node, pow_node)
 
 
-class RMSNormModule(nn.Module):
-    def forward(self, inputs, weights, epsilon):
-        return torch_mlu_ops.fused_rms_norm(
-            inputs, None, weights, None, None, epsilon, False
-        )
-
-
 class FusedRMSNorm(Pattern):
     _opt_level = OptLevel.level2
 
