@@ -2,7 +2,7 @@ import pytest
 import torch
 import torch_mlu
 import xpu_graph
-
+from xpu_graph.config import OptLevel
 import torch.nn.functional as F
 from xpu_graph.test_utils import is_similar
 
@@ -93,16 +93,26 @@ def fn17(inputs, weight, bias):
     return output.view(-1).reshape(128, 32, 16)
 
 
+def fn18(inputs, weight, bias):
+    return torch.addmm(bias, inputs, weight)
+
+
+def fn19(inputs, weight, bias):
+    output = torch.addmm(bias, inputs, weight)
+    output = F.silu(output)
+    return output
+
+
 def matmul_test(xpu_graph_backend, func):
     if func in [fn0, fn1, fn9]:
         inputs = torch.randn((4096, 768), device=device, dtype=data_type)
         weight = torch.randn((768, 16), device=device, dtype=data_type)
         bias = torch.randn((16), device=device, dtype=data_type)
-    elif func in [fn2, fn3, fn10, fn11, fn12, fn13, fn14, fn15, fn16]:
+    elif func in [fn2, fn3, fn10, fn11, fn12, fn13, fn14, fn15, fn16, fn17]:
         inputs = torch.randn((4096, 768), device=device, dtype=data_type)
         weight = torch.randn((16, 768), device=device, dtype=data_type)
         bias = torch.randn((16), device=device, dtype=data_type)
-    elif func == fn4:
+    elif func in [fn4, fn18, fn19]:
         inputs = torch.randn((128, 5897), device=device, dtype=data_type)
         weight = torch.randn((5897, 540), device=device, dtype=data_type)
         bias = torch.randn((128, 540), device=device, dtype=data_type)
@@ -127,7 +137,7 @@ def matmul_test(xpu_graph_backend, func):
 
 class TestMatMul:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler()
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -149,6 +159,9 @@ class TestMatMul:
             fn14,
             fn15,
             fn16,
+            fn17,
+            fn18,
+            fn19,
         ],
     )
     def test_matmul_patterns(self, pattern_func):
@@ -156,4 +169,8 @@ class TestMatMul:
 
 
 if __name__ == "__main__":
-    pytest.main()
+    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2)
+    matmul_test(xpu_graph_backend, fn16)
+    matmul_test(xpu_graph_backend, fn17)
+    matmul_test(xpu_graph_backend, fn18)
+    matmul_test(xpu_graph_backend, fn19)

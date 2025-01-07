@@ -14,6 +14,7 @@ from ...utils.check_ops import (
     check_act_op,
     check_trans_op,
     check_bmm_op,
+    check_addmm_op,
     check_t_op,
 )
 
@@ -185,7 +186,7 @@ class FusedMatMulReplacement(nn.Module):
                 bias = bias.view(-1)
                 bias_shape = bias.shape
             if len(bias_shape) == 1:
-                #a last dim must be contiguous.
+                # a last dim must be contiguous.
                 if inputs.stride()[-1] != 1:
                     inputs = inputs.contiguous()
                 output = torch_mlu_ops.matmul(
@@ -272,7 +273,7 @@ def match_mm(graph_module):
     return changed
 
 
-def match_mm_add(graph_module):
+def match_mm_add1(graph_module):
     graph_module.add_submodule(
         "mlu_tmo_fused_matmul_2_replacement", FusedMatMulReplacement()
     )
@@ -301,6 +302,38 @@ def match_mm_add(graph_module):
         assert new_node.args[0] == mm_param.input
         graph_module.graph.erase_node(mm_node)
         changed = True
+    return changed
+
+
+def _is_addmm(node: NodeType) -> Tuple[bool, Optional[MMParam]]:
+    mm_param = MMParam()
+    match_, input1, input2, input3 = check_addmm_op(node)
+    if not match_:
+        return False, None
+    if not mm_param.set_input(input2):
+        return False, None
+
+    if not mm_param.set_weight1(input3):
+        return False, None
+
+    if not mm_param.set_bias1(input1):
+        return False, None
+    return True, mm_param
+
+
+def match_mm_add2(graph_module):
+    graph_module.add_submodule(
+        "mlu_tmo_fused_matmul_2_replacement", FusedMatMulReplacement()
+    )
+    changed = False
+    for node in reversed(graph_module.graph.nodes):
+
+        is_match, mm_param = _is_addmm(node)
+        if is_match:
+            new_node = replace_node(
+                graph_module, node, mm_param, "mlu_tmo_fused_matmul_2_replacement"
+            )
+            changed = True
     return changed
 
 
@@ -378,7 +411,8 @@ class FusedMatMul(Pattern):
         graph_module.graph.lint()
         graph_module.recompile()
 
-        is_modified |= match_mm_add(graph_module)
+        is_modified |= match_mm_add1(graph_module)
+        is_modified |= match_mm_add2(graph_module)
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_2_replacement")
         graph_module.graph.lint()
         graph_module.recompile()
