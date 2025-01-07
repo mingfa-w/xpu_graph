@@ -4,7 +4,6 @@ import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 from typing import Callable
 from ..utils.check_ops import (
-    check_cat_op,
     check_slice_op,
     check_stack_op,
 )
