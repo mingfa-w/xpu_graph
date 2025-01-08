@@ -201,6 +201,7 @@ def check_clone(node: fx.Node) -> bool:
 def check_getitem_op(node: fx.node) -> bool:
     return check_op(node, operator.getitem)
 
+
 def check_mask_fill_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.masked_fill.Scalar)
 
@@ -216,6 +217,7 @@ def check_repeat_op(node: fx.node) -> bool:
 def check_unsqueeze_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.unsqueeze.default)
 
+
 def check_norm_op(node: fx.node):
     if not isinstance(node, fx.Node):
         return False, None
@@ -226,3 +228,14 @@ def check_norm_op(node: fx.node):
     if node.target == "rms_norm_op":
         return True, "rms_norm"
     return False, None
+
+
+def check_addmm_op(
+    node: fx.Node,
+) -> tuple[bool, fx.Node | None, fx.Node | None, fx.Node | None]:
+    if not check_op(node, torch.ops.aten.addmm.default):
+        return False, None, None, None
+    arg1 = get_input_node(node, 0)
+    arg2 = get_input_node(node, 1)
+    arg3 = get_input_node(node, 2)
+    return True, arg1, arg2, arg3
