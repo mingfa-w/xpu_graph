@@ -28,6 +28,7 @@ def get_actual_node(node, idx):
 
 
 def check_op(node: fx.Node, target) -> bool:
+    #print("_is_valid_node", node.name, _is_valid_node(node),node.target,target)
     return _is_valid_node(node) and node.target == target
 
 
@@ -37,6 +38,10 @@ def check_rsqrt_op(node: fx.Node) -> bool:
 
 def check_add_op(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten.add.Tensor)
+
+
+def check_mv_op(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten.mv.default)
 
 
 def check_mean_op(node: fx.Node) -> bool:
@@ -102,6 +107,7 @@ def check_div_or_mul_op(
     if node.target not in [
         torch.ops.aten.div.Tensor,
         torch.ops.aten.mul.Tensor,
+        torch.ops.aten.mul.Scalar,
     ]:
         return False, None, ()
 
@@ -118,6 +124,14 @@ def check_bmm_op(node: fx.Node) -> tuple[bool, fx.Node | None, fx.Node | None]:
     arg1 = get_input_node(node, 0)
     arg2 = get_input_node(node, 1)
     return True, arg1, arg2
+
+def check_addmm_op(node: fx.Node) -> tuple[bool, fx.Node | None, fx.Node | None]:
+    if not check_op(node, torch.ops.aten.addmm.default):
+        return False, None, None,None
+    arg1 = get_input_node(node, 0)
+    arg2 = get_input_node(node, 1)
+    arg3 = get_input_node(node, 2)
+    return True, arg1, arg2, arg3
 
 
 def check_mm_op(node: fx.Node) -> tuple[bool, fx.Node | None, fx.Node | None]:
@@ -145,15 +159,8 @@ def check_softmax_op(node: fx.Node) -> bool:
     return True
 
 
-def check_cat_op(node: fx.Node):
-    is_cat = check_op(node, torch.ops.aten.cat.default)
-    if is_cat:
-        if len(node.args) == 1:
-            return True, 0
-        else:
-            return True, node.args[1]
-    else:
-        return False, 0
+def check_cat_op(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten.cat.default)
 
 
 def check_slice_op(node: fx.Node) -> bool:
@@ -176,6 +183,18 @@ def check_t_op(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten.t.default)
 
 
+def check_copy(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten._to_copy.default)
+
+
+def check_clone(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten.clone.default)
+
+
+def check_getitem_op(node: fx.node) -> bool:
+    return check_op(node, operator.getitem)
+
+
 def check_act_op(
     node: fx.Node,
 ) -> tuple[bool, fx.Node | None, tuple[fx.Node | None, bool] | None]:
@@ -190,34 +209,6 @@ def check_act_op(
     return False, None
 
 
-def check_copy(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten._to_copy.default)
-
-
-def check_clone(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.clone.default)
-
-
-def check_getitem_op(node: fx.node) -> bool:
-    return check_op(node, operator.getitem)
-
-
-def check_mask_fill_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.masked_fill.Scalar)
-
-
-def check_eq_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.eq.Scalar)
-
-
-def check_repeat_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.repeat.default)
-
-
-def check_unsqueeze_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.unsqueeze.default)
-
-
 def check_norm_op(node: fx.node):
     if not isinstance(node, fx.Node):
         return False, None
@@ -228,14 +219,3 @@ def check_norm_op(node: fx.node):
     if node.target == "rms_norm_op":
         return True, "rms_norm"
     return False, None
-
-
-def check_addmm_op(
-    node: fx.Node,
-) -> tuple[bool, fx.Node | None, fx.Node | None, fx.Node | None]:
-    if not check_op(node, torch.ops.aten.addmm.default):
-        return False, None, None, None
-    arg1 = get_input_node(node, 0)
-    arg2 = get_input_node(node, 1)
-    arg3 = get_input_node(node, 2)
-    return True, arg1, arg2, arg3
