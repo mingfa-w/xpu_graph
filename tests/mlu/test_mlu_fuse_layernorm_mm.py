@@ -1,46 +1,37 @@
-import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from xpu_graph.config import OptLevel
 import xpu_graph
 from xpu_graph.test_utils import is_similar
+import pytest
 from xpu_graph.test_utils import assertTensorsEqual
 
 device = "mlu:0"
 data_type = torch.float16
 aten = torch.ops.aten
+def fn1(inputs, weight,q_bias):
+    return torch.matmul(inputs,weight)+q_bias
 
-
-def fn1(inputs, weight, q_bias):
-    return torch.matmul(inputs, weight) + q_bias
-
-
-def fn0(
-    inputs,
-    residual,
-    weight,
-    bias,
-    q_weight,
-    q_bias,
-    k_weight=None,
-    k_bias=None,
-    v_weight=None,
-    v_bias=None,
-    norm_out: bool = False,
-):
-    # inputs_ = inputs + residual
+def fn0(inputs, residual, weight, bias,q_weight,q_bias=None,k_weight=None,k_bias=None,v_weight=None,v_bias=None,norm_out: bool = False):
+    #inputs_ = inputs + residual
     inputs_ = inputs
     normed = torch.layer_norm(
         inputs_, normalized_shape=[512], weight=weight, bias=bias, eps=1e-5
     )
-
-    proj_q = torch.matmul(normed, q_weight.transpose(1, 0)) + q_bias
+    
+    proj_q = torch.matmul(normed,  q_weight.transpose(1, 0))
+    if q_bias is not None:
+        proj_q = proj_q + q_bias
     if k_weight is not None:
-        proj_k = torch.matmul(normed, k_weight.transpose(1, 0)) + k_bias
+        proj_k = torch.matmul(normed, k_weight.transpose(1,0))
+        if k_bias is not None:
+            proj_k = proj_k + k_bias 
     if v_weight is not None:
-        proj_v = torch.matmul(normed, v_weight.transpose(1, 0)) + v_bias
-    # tuple
+        proj_v = torch.matmul(normed, v_weight.transpose(1,0)) + v_bias
+        if v_bias is not None:
+            proj_v = proj_v + v_bias
+    #tuple
     outputs = [proj_q]
     if k_weight is not None:
         outputs.append(proj_k)
@@ -62,14 +53,18 @@ def layernorm_mul_test(xpu_graph, func):
     weights = torch.chunk(weight, 3)
     biass = torch.chunk(bias, 3)
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
-    # res = compiled(inputs, residual, norm_weight, norm_bias,weights[0],biass[0],weights[1],biass[1],weights[2],biass[2])
-    # res1 = func(inputs, residual, norm_weight, norm_bias,weights[0],biass[0],weights[1],biass[1],weights[2],biass[2])
-    res = compiled(inputs, residual, norm_weight, norm_bias, weights[0], biass[0])
-    res1 = func(inputs, residual, norm_weight, norm_bias, weights[0], biass[0])
+    #res = compiled(inputs, residual, norm_weight, norm_bias,weights[0],biass[0],weights[1],biass[1],weights[2],biass[2])
+    #res1 = func(inputs, residual, norm_weight, norm_bias,weights[0],biass[0],weights[1],biass[1],weights[2],biass[2])
+    res_with_qbias = compiled(inputs, residual, norm_weight, norm_bias,weights[0],biass[0])
+    res1_with_qbias = func(inputs, residual, norm_weight, norm_bias,weights[0],biass[0])
+    res = compiled(inputs, residual, norm_weight, norm_bias,weights[0])
+    res1 = func(inputs, residual, norm_weight, norm_bias,weights[0])
+    assertTensorsEqual(
+        res_with_qbias[0].cpu().float(), res1_with_qbias[0].cpu().float(), 0.005, use_MSE=True, use_RAE=True
+    )
     assertTensorsEqual(
         res[0].cpu().float(), res1[0].cpu().float(), 0.005, use_MSE=True, use_RAE=True
     )
-
 
 class TestLayerNorm:
     def setup_class(self):
