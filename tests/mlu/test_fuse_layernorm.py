@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,7 +7,6 @@ from xpu_graph.config import OptLevel
 import torch_mlu_ops
 import xpu_graph
 from xpu_graph.test_utils import is_similar
-import pytest
 
 
 device = "mlu:0"

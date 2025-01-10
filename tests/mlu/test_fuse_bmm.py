@@ -1,5 +1,5 @@
-import math
 import pytest
+import math
 
 import torch
 import xpu_graph
