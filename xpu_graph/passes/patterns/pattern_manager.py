@@ -37,7 +37,7 @@ class PatternManager(Optimizer):
     def process(self, gm: fx.GraphModule) -> bool:
         changed = False
         loop_time = 5
-        for group in sorted(self._patterns):
+        for group in sorted(self._patterns.keys()):
             for i in range(loop_time):
                 for pattern in self._patterns[group]:
                     changed = changed or pattern(gm)
