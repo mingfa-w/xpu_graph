@@ -38,9 +38,9 @@ def find_slice_nodes(graph_module):
 
 # one src node slice to multi dst nodes
 class FusedSlice(Pattern):
+    _pattern_group = PatternGroup.GROUP1
     def __init__(self, target_mod: torch.nn.Module):
         self.target_mod = target_mod
-        self._pattern_group = PatternGroup.GROUP1
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
