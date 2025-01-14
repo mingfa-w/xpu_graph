@@ -218,4 +218,6 @@ def check_norm_op(node: fx.node):
         return True, "layer_norm"
     if node.target == "rms_norm_op":
         return True, "rms_norm"
+    if node.target == "mlu_tmo_fused_norm_mm_replacement":
+        return True,"mlu_tmo_fused_norm_mm_replacement"
     return False, None

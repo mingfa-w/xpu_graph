@@ -56,9 +56,12 @@ def _is_norm(node: fx.Node, match_str: str):
     weight = layernorm_node.args[2]
     bias = layernorm_node.args[3]
     eps = layernorm_node.args[4]
+    q_bias = None
+    if norm_type == "mlu_tmo_fused_norm_mm_replacement":
+        q_bias = layernorm_node.args[5]
 
     # TODO(yhj): if len(add_node.users) > 1: return residual
-    return True, (inputs, normalized_shape, weight, bias, eps)
+    return True, (inputs, normalized_shape, weight, bias, eps,q_bias)
 
 
 def _is_layernorm(
@@ -68,10 +71,16 @@ def _is_layernorm(
         return False, ()
     return _is_norm(node.args[0],"layer_norm")
 
+
 def _is_rmsnorm(
     node: fx.Node,
 ) -> tuple[bool, Optional[fx.Node], Optional[fx.Node], Optional[fx.Node]]:
     return _is_norm(node, "rms_norm")
+
+def _is_tmo_norm(
+    node: fx.Node,
+) -> tuple[bool, Optional[fx.Node], Optional[fx.Node], Optional[fx.Node]]:
+    return _is_norm(node, "mlu_tmo_fused_norm_mm_replacement")
 
 def _check_add_op(node: fx.Node) -> tuple[bool, fx.Node | None, fx.Node | None]:
     if not check_add_op(node):
@@ -80,45 +89,44 @@ def _check_add_op(node: fx.Node) -> tuple[bool, fx.Node | None, fx.Node | None]:
     arg2 = get_input_node(node, 1)
     return True, arg1, arg2
 
+    
+def _is_mm_norm(node: fx.Node):
+    mm_node = node
+    mm_match, mm_input1, mm_input2 = check_mm_op(mm_node)
+    if not mm_match:
+        return False, ()
+    norm_node = get_actual_node(mm_input1,0)
+    norm_match, norm_params= _is_layernorm(norm_node)
+    if not norm_match:
+        return False, ()
+    inputs = norm_params[0]
+    residual = norm_params[1]
+    weight = norm_params[2]
+    bias = norm_params[3]
+    eps = norm_params[4]
+    q_weight = mm_input2
+    q_bias = None
+    return True, (inputs,residual,weight,bias,None,eps,q_weight,q_bias)
 
-def _is_add_mm_norm(node: fx.Node):
+def _is_add_tmo_norm(node: fx.Node):
     add_node = node
     add_match, add_input1, add_input2 = _check_add_op(add_node)
     if not add_match:
-        mm_node = node
-        mm_match, mm_input1, mm_input2 = check_mm_op(mm_node)
-        if not mm_match:
-            return False, ()
-        norm_node = get_actual_node(mm_input1,0)
-        norm_match, norm_params= _is_layernorm(norm_node)
-        if not norm_match:
-            return False, ()
-        inputs = norm_params[0]
-        residual = norm_params[1]
-        weight = norm_params[2]
-        bias = norm_params[3]
-        eps = norm_params[4]
-        q_weight = mm_input2
-        q_bias = add_input2
-        return True, (inputs,residual,weight,bias,None,eps,q_weight,q_bias)
-    else:
-        
-        mm_node = get_actual_node(add_input1,0)
-        mm_match, mm_input1, mm_input2 = check_mm_op(mm_node)
-        if not mm_match:
-            return False, ()
-        norm_node = get_actual_node(mm_input1,0)
-        norm_match, norm_params= _is_layernorm(norm_node)
-        if not norm_match:
-            return False, ()
-        inputs = norm_params[0]
-        residual = norm_params[1]
-        weight = norm_params[2]
-        bias = norm_params[3]
-        eps = norm_params[4]
-        q_weight = mm_input2
-        q_bias = add_input2
-        return True, (inputs,residual,weight,bias,None,eps,q_weight,q_bias)
+        return False, ()
+    norm_node = get_actual_node(add_input1,0)
+    norm_match, norm_params= _is_tmo_norm(norm_node)
+
+    print("####_is_add_tmo_norm",norm_match)
+    if not norm_match:
+        return False, ()
+    inputs = norm_params[0]
+    residual = norm_params[1]
+    weight = norm_params[2]
+    bias = norm_params[3]
+    eps = norm_params[4]
+    q_weight = norm_params[5]
+    q_bias = add_input2
+    return True, (inputs,residual,weight,bias,None,eps,q_weight,q_bias)
 
 class FusedNormMM(Pattern):
     _opt_level = OptLevel.level2
@@ -129,8 +137,8 @@ class FusedNormMM(Pattern):
             "mlu_tmo_fused_norm_mm_replacement", FusedNormMMReplacement()
         )
         for node in reversed(graph_module.graph.nodes):
-            is_match, params = _is_add_mm_norm(node)
-            if is_match:
+            is_match_mm_norm, params = _is_mm_norm(node)
+            if is_match_mm_norm:
                 with graph_module.graph.inserting_before(node):
                     new_node = graph_module.graph.call_module(
                         "mlu_tmo_fused_norm_mm_replacement",
@@ -146,7 +154,29 @@ class FusedNormMM(Pattern):
                     )
                 node.replace_all_uses_with(new_node)
                 graph_module.graph.erase_node(node)
-                is_modified = True        
+                is_modified = True
+        graph_module.add_submodule(
+            "mlu_tmo_fused_norm_mm_replacement1", FusedNormMMReplacement()
+        )
+        for node in reversed(graph_module.graph.nodes):
+            is_match_add_tmo_norm, params = _is_add_tmo_norm(node)
+            if is_match_add_tmo_norm:
+                with graph_module.graph.inserting_before(node):
+                    new_node = graph_module.graph.call_module(
+                        "mlu_tmo_fused_norm_mm_replacement1",
+                        args=(
+                            params[0],
+                            params[1],
+                            params[2],
+                            params[3],
+                            params[5],
+                            params[6],
+                            params[7],
+                            ),
+                    )
+                node.replace_all_uses_with(new_node)
+                graph_module.graph.erase_node(node)
+                is_modified = True          
         graph_module.graph.lint()
         graph_module.recompile()
         return is_modified

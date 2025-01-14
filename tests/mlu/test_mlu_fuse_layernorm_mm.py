@@ -10,8 +10,6 @@ from xpu_graph.test_utils import assertTensorsEqual
 device = "mlu:0"
 data_type = torch.float16
 aten = torch.ops.aten
-def fn1(inputs, weight,q_bias):
-    return torch.matmul(inputs,weight)+q_bias
 
 def fn0(inputs, residual, weight, bias,q_weight,q_bias=None,k_weight=None,k_bias=None,v_weight=None,v_bias=None,norm_out: bool = False):
     #inputs_ = inputs + residual
@@ -53,10 +51,10 @@ def layernorm_mul_test(xpu_graph, func):
     weights = torch.chunk(weight, 3)
     biass = torch.chunk(bias, 3)
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
-    #res = compiled(inputs, residual, norm_weight, norm_bias,weights[0],biass[0],weights[1],biass[1],weights[2],biass[2])
-    #res1 = func(inputs, residual, norm_weight, norm_bias,weights[0],biass[0],weights[1],biass[1],weights[2],biass[2])
     res_with_qbias = compiled(inputs, residual, norm_weight, norm_bias,weights[0],biass[0])
     res1_with_qbias = func(inputs, residual, norm_weight, norm_bias,weights[0],biass[0])
+    res = compiled(inputs, residual, norm_weight, norm_bias,weights[0],biass[0],weights[1],biass[1],weights[2],biass[2])
+    res1 = func(inputs, residual, norm_weight, norm_bias,weights[0],biass[0],weights[1],biass[1],weights[2],biass[2])
     res = compiled(inputs, residual, norm_weight, norm_bias,weights[0])
     res1 = func(inputs, residual, norm_weight, norm_bias,weights[0])
     assertTensorsEqual(
