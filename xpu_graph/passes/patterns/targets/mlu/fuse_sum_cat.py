@@ -328,6 +328,7 @@ class FusedCatSum(Pattern):
 
     def process(self, gm: fx.GraphModule):
         changed = False
+        return False
         gm.add_submodule("mlu_triton_fused_slice_sum_cat", SliceSumCatOperation())
         changed1 = True
         while changed1:

@@ -42,6 +42,8 @@ def fuse_multiple_cat(graph_module: fx.GraphModule):
                     args=(new_nodes, 1, slice_offsets[idx][0], slice_offsets[idx][1]),
                     kwargs=None,
                 )
+                if 'tensor_meta' in ori_node.meta:
+                    new_node.meta['tensor_meta'] = ori_node.meta['tensor_meta']
                 ori_node.replace_all_uses_with(new_node)
     return changed
 
