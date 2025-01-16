@@ -43,14 +43,15 @@ class FusedBAddBMMReplacement(nn.Module):
         if input2.shape != (batch, input2.numel() // batch // n, n):
             input2 = input2.contiguous().view(batch, -1, n)
 
-        if input1.dtype not in [torch.float32, torch.bfloat16, torch.float16]:
+        if input1.dtype != output_dtype:
             input1 = input1.to(output_dtype)
-        if input2.dtype not in [torch.float32, torch.bfloat16, torch.float16]:
+        if input2.dtype != output_dtype:
             input2 = input2.to(output_dtype)
 
         if bias is not None:
+            if bias.dtype != output_dtype:
+                bias = bias.to(output_dtype)
             output = torch.bmm(input1, input2) + bias
-            # output = torch.baddbmm(bias, input1, input2)
         else:
             output = torch.bmm(input1, input2)
 
