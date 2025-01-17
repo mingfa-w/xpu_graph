@@ -175,6 +175,11 @@ class FusedMatMulReplacement(nn.Module):
     def forward(
         self, inputs, input_shape, weight, weight_shape, trans_b, bias, shape_param, act
     ):
+
+        # input last dim must be contiguous.
+        if inputs.stride()[-1] != 1:
+            inputs = inputs.contiguous()
+
         if bias != None:
             if isinstance(bias, int):
                 dim = weight.shape[1] if trans_b == False else weight.shape[0]
@@ -186,9 +191,6 @@ class FusedMatMulReplacement(nn.Module):
                 bias = bias.view(-1)
                 bias_shape = bias.shape
             if len(bias_shape) == 1:
-                # a last dim must be contiguous.
-                if inputs.stride()[-1] != 1:
-                    inputs = inputs.contiguous()
                 output = torch_mlu_ops.matmul(
                     inputs,
                     weight,
