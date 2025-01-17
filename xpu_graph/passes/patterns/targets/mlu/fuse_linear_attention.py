@@ -1,11 +1,11 @@
 import torch
 from torch import nn, fx
 import torch_mlu
-import torch_mlu_ops
 from typing import List, Tuple
 
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
+from xpu_graph.config import OptLevel
 from ...utils.check_ops import (
     get_actual_node,
     get_shape,
@@ -17,7 +17,7 @@ from ...utils.check_ops import (
     check_act_op,
 )
 
-from .triton_kernel.linear_attention_kernel import attention
+from .triton_kernel.fused_linear_attn import linear_attn
 
 
 def naive(q, k, v, bias, causal, sm_scale, has_bias):
@@ -41,8 +41,8 @@ class LinearAttentionReplacement(nn.Module):
         if is_div:
             sm_scale = 1.0 / sm_scale
 
-        # output = naive(
-        output = attention(query, key, value, bias, causal, sm_scale, has_bias)
+        # output = naive(query, key, value, bias, causal, sm_scale, has_bias)
+        output = linear_attn(query, key, value, bias, causal, sm_scale, has_bias)
         return output
 
 
@@ -57,9 +57,11 @@ def _is_bias(silu_node: fx.Node):
     repeat_node = eq_node.args[0]
     if not check_repeat_op(repeat_node):
         return False, []
+    return True, [bmm_node, repeat_node]
     unsqueeze_node = repeat_node.args[0]
     if not check_unsqueeze_op(unsqueeze_node):
         return False, []
+    return True, [bmm_node, unsqueeze_node]
     bias_node = unsqueeze_node.args[0]
     return True, [bmm_node, bias_node]
 
@@ -103,9 +105,12 @@ def _is_liear(node: fx.Node):
 
 
 class FusedLinearAttention(Pattern):
+    _opt_level = OptLevel.level3
+
     def process(self, graph_module: fx.GraphModule):
         modified = False
         graph_module.add_submodule("linear_attention", LinearAttentionReplacement())
+        print(graph_module.graph)
         for node in reversed(graph_module.graph.nodes):
             matched, linear_param = _is_liear(node)
             if not matched:

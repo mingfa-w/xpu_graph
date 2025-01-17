@@ -225,6 +225,8 @@ def _is_fa(node: fx.Node):
 
 
 class FusedFlashAttention(Pattern):
+    _opt_level = OptLevel.level3
+
     def process(self, graph_module: fx.GraphModule):
         graph_module.add_submodule("flash_attn_base", FlashAttentionReplacement())
         graph_module.add_submodule(
