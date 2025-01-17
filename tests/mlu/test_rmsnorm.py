@@ -5,6 +5,7 @@ import xpu_graph
 from xpu_graph.test_utils import is_similar
 from xpu_graph.config import OptLevel
 
+
 class RMSNorm1(torch.nn.Module):
     def __init__(self, hidden_size, eps=1e-6):
         super().__init__()

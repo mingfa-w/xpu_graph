@@ -110,7 +110,6 @@ class FusedLinearAttention(Pattern):
     def process(self, graph_module: fx.GraphModule):
         modified = False
         graph_module.add_submodule("linear_attention", LinearAttentionReplacement())
-        print(graph_module.graph)
         for node in reversed(graph_module.graph.nodes):
             matched, linear_param = _is_liear(node)
             if not matched:

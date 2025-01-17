@@ -193,6 +193,7 @@ class FusedAddLayerNorm(Pattern):
         graph_module.recompile()
         return is_modified
 
+
 class FusedAddRMSNorm(Pattern):
     _opt_level = OptLevel.level2
 

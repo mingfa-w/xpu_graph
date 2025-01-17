@@ -72,9 +72,7 @@ def fused_slice_low(
 
 
 @fused_slice_low.register_fake
-def fused_slice_low_fake(
-    src_tensor, start_indices, slice_len, n_rows, input_stride
-):
+def fused_slice_low_fake(src_tensor, start_indices, slice_len, n_rows, input_stride):
     output_tensors = torch.empty(
         (len(start_indices), src_tensor.shape[0], slice_len),
         device=src_tensor.device,
