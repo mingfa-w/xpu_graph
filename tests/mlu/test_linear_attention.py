@@ -59,6 +59,7 @@ class TestLinearAttention:
         config.target = xpu_graph.config.Target.mlu
         config.vendor_compiler = {"mode": "reduce-overhead"}
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level3)
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -68,13 +69,10 @@ class TestLinearAttention:
         ],
     )
     def test_linear_attention_patterns(self, pattern_func):
-        linear_attention_test(self.xpu_graph, pattern_func)
+        linear_attention_test(self.xpu_graph_backend, pattern_func)
 
 
 if __name__ == "__main__":
-    config = xpu_graph.config.XpuGraphConfig()
-    config.target = xpu_graph.config.Target.mlu
-    config.opt_level = OptLevel.level2
-    xpu_graph = xpu_graph.compiler.XpuGraph(config)
-    linear_attention_test(xpu_graph, fn0)
-    linear_attention_test(xpu_graph, fn1)
+    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level3)
+    linear_attention_test(xpu_graph_backend, fn0)
+    linear_attention_test(xpu_graph_backend, fn1)

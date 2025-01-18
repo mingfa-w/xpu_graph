@@ -10,6 +10,7 @@ Extra Credits:
 - Rabe and Staats (https://arxiv.org/pdf/2112.05682v2.pdf)
 
 """
+
 import torch
 import torch_mlu
 
@@ -17,8 +18,11 @@ import triton
 import triton.language as tl
 
 
+IS_Y = False
+
+
 @triton.jit
-def silu_forward(x):
+def silu_forward(x, PERF_OPT: tl.constexpr, IS_Y: tl.constexpr):
     x_fp32 = x.to(tl.float32)
     log2e = -1.442695041
     y = 1.0 / (1.0 + tl.exp2(x_fp32 * log2e)) * x_fp32
@@ -45,6 +49,8 @@ def _attn_fwd_inner(
     IS_DIVISIBLE: tl.constexpr,
     HAS_BIAS: tl.constexpr,
     EXPANDED_BIAS: tl.constexpr,
+    PERF_OPT: tl.constexpr,
+    IS_Y: tl.constexpr,
 ):
     # range of values handled by this stage
     if CAUSAL:
@@ -95,14 +101,13 @@ def _attn_fwd_inner(
             qk += tl.dot(q, k)
             qk = qk * qk_scale
             qk = qk * (bias != 0).to(qk.dtype)
-            # qk = qk + bias
         else:
             qk += tl.dot(q, k)
             qk = qk * qk_scale
         if CAUSAL and start_n >= start_m * BLOCK_M:
             mask = offs_m[:, None] >= (start_n + offs_n[None, :])
             qk = qk + tl.where(mask, 0, -1.0e6)
-        p = silu_forward(qk)
+        p = silu_forward(qk, PERF_OPT, IS_Y)
         if IS_DIVISIBLE:
             v = tl.load(V_block_ptr)
         else:
@@ -168,6 +173,8 @@ def _attn_fwd(
     IS_DIVISIBLE: tl.constexpr,
     HAS_BIAS: tl.constexpr,
     EXPANDED_BIAS: tl.constexpr,
+    PERF_OPT: tl.constexpr,
+    IS_Y: tl.constexpr,
 ):
     program_id = tl.program_id(0)
     program_dim = tl.num_programs(axis=0)
@@ -255,6 +262,8 @@ def _attn_fwd(
             IS_DIVISIBLE,
             HAS_BIAS,
             EXPANDED_BIAS,
+            PERF_OPT,
+            IS_Y,
         )
 
         if IS_DIVISIBLE:
@@ -263,21 +272,42 @@ def _attn_fwd(
             tl.store(O_block_ptr, acc.to(Out.type.element_ty), boundary_check=(0, 1))
 
 
+empty = torch.empty(128, device="mlu")
+
+
 class _attention(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, q, k, v, bias, causal, sm_scale, has_bias, expanded_bias):
+    def forward(
+        ctx, q, k, v, bias, causal, sm_scale, has_bias, expanded_bias, perf_opt
+    ):
         # shape constraints
         Lq, Lk, Lv = q.shape[-1], k.shape[-1], v.shape[-1]
         assert Lq == Lk and Lk == Lv
         o = torch.empty_like(q)
-        BLOCK_M = 128
-        BLOCK_N = 128
-        if Lq == 256:
-            BLOCK_N = 64
+        if IS_Y:
+            BLOCK_M = 256
+            BLOCK_N = 128
+            if perf_opt == 2:
+                BLOCK_M = 128
+            if Lq == 128 and perf_opt == 1:
+                BLOCK_M = 128
+            if Lq == 256:
+                BLOCK_M = 128
+                if perf_opt == 1 or perf_opt == 2:
+                    BLOCK_N = 64
+        else:
+            BLOCK_M = 128
+            BLOCK_N = 128
+            if Lq == 128 and perf_opt == 1:
+                BLOCK_N = 64
+            if Lq == 256:
+                BLOCK_N = 64
+                if perf_opt == 1:
+                    BLOCK_M = 64
 
         num_warps = 1
-        num_stages = 5
+        num_stages = 3
         processor_count = torch.mlu.get_device_properties(
             torch.mlu.current_device()
         ).multi_processor_count
@@ -326,6 +356,8 @@ class _attention(torch.autograd.Function):
             IS_DIVISIBLE=IS_DIVISIBLE,  #
             HAS_BIAS=has_bias,
             EXPANDED_BIAS=expanded_bias,
+            PERF_OPT=perf_opt,
+            IS_Y=IS_Y,
             num_warps=num_warps,  #
             num_stages=num_stages,  #
         )
@@ -334,4 +366,3 @@ class _attention(torch.autograd.Function):
 
 
 attention = _attention.apply
-
