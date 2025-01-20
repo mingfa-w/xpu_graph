@@ -43,6 +43,7 @@ def fuse_multiple_cat(graph_module: fx.GraphModule):
                     kwargs=None,
                 )
                 ori_node.replace_all_uses_with(new_node)
+        changed = True
     return changed
 
 
