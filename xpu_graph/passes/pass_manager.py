@@ -30,10 +30,11 @@ class PassManager:
         if Cse._opt_level <= config.opt_level:
             self._passes.append(Cse())
 
-        from .constant_folding import ConstantFolding
+        if config.constant_folding:
+            from .constant_folding import ConstantFolding
 
-        if ConstantFolding._opt_level <= config.opt_level:
-            self._passes.append(ConstantFolding())
+            if ConstantFolding._opt_level <= config.opt_level:
+                self._passes.append(ConstantFolding())
 
         self._passes.append(self._pattern_manager)
 
