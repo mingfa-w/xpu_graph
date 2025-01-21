@@ -53,4 +53,5 @@ class XpuGraphConfig:
     dump_graph: bool = False
     use_xpu_ops: bool = False  # Use xpu_ops or not
     freeze: bool = False  # Freeze parameter, will do better constant_folding
+    constant_folding: bool = False
     vendor_compiler: Optional[Dict[str, Any]] = None
