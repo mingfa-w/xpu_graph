@@ -1,0 +1,36 @@
+name: Run test suite
+on:
+  push:
+    branches: [ master ]
+defaults:
+  run:
+    shell: bash
+jobs:
+  clone-code:
+    runs-on: self-hosted
+    steps:
+      - name: clone xpu_graph code
+        run: |
+          cd /data01/wangmingfa/mlu-ci
+          sudo rm -rf xpu_graph
+          git clone https://github.com/BD-Seed-HHW/xpu_graph.git
+  run-tests:
+    name: Run xpu_graph tests
+    runs-on: self-hosted
+    container:
+      image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
+      volumes:
+        - /data01/wangmingfa/mlu-ci:/host
+        - /tmp/.X11-unix:/tmp/.X11-unix
+        - /dev:/dev
+        - /usr/bin/cnmon:/usr/bin/cnmon
+      options: --pull never -e DISPLAY=$DISPLAY -e GDK_SCALE -e GDK_DPI_SCALE --privileged=true --ipc=host --pid=host --user root
+    steps:
+      - name: Running mlu tests
+        shell: bash
+        run: |
+          cd /host/xpu_graph
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/neuware/lib64
+          pip install --root-user-action=ignore -e .
+          python tests/mlu/test_*
+          
