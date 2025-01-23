@@ -88,23 +88,22 @@ def _is_add_norm(node: fx.Node, match_str: str):
     if norm_type != match_str:
         return False, ()
 
+    add_node = layernorm_node.args[0]
+    if not check_add_op(add_node):
+        return False, ()
+
     if match_str == "layer_norm":
-        add_node = layernorm_node.args[0]
-        if not check_add_op(add_node):
-            return False, ()
-        # normalized_shape = layernorm_node.args[1]
         weight = layernorm_node.args[2]
         if weight is None:
             return False, ()
         bias = layernorm_node.args[3]
         eps = layernorm_node.args[4]
     else:
-        add_node = layernorm_node.args[0]
-        if not check_add_op(add_node):
-            return False, ()
         weight = layernorm_node.args[1]
-        eps = layernorm_node.args[2]
+        if weight is None:
+            return False, ()
         bias = None
+        eps = layernorm_node.args[2]
 
     inputs = add_node.args[0]
     residual = add_node.args[1]
