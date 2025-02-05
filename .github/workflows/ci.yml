@@ -1,8 +1,7 @@
 name: Run test suite
 on:
-  pull_request:
-    branches:
-      - master
+  push:
+    branches: [ master ]
 defaults:
   run:
     shell: bash
