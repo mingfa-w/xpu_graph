@@ -106,6 +106,15 @@ def _is_add_norm(node: fx.Node, match_str: str):
     inputs = add_node.args[0]
     residual = add_node.args[1]
 
+    inputs_dtype = inputs.meta["tensor_meta"].dtype
+    residual_dtype = residual.meta["tensor_meta"].dtype
+    weight_dtype = weight.meta["tensor_meta"].dtype
+    if inputs_dtype != residual_dtype:
+        return False, ()
+
+    if inputs_dtype != weight_dtype:
+        return False, ()
+
     store_output_before_norm = False
 
     if len(add_node.users) > 1:
