@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 
 from xpu_graph.config import OptLevel
 from xpu_graph.utils import xpu_timer, logger
+from xpu_graph.fx_utils import FxStage
 
 opt_times = 0
 
@@ -13,6 +14,7 @@ class Optimizer(ABC):
     _debug = False
     _dump_graph = False
     _opt_level = OptLevel.level0
+    _stages = [FxStage.forward]
 
     @abstractmethod
     def process(self, gm: fx.GraphModule) -> bool:

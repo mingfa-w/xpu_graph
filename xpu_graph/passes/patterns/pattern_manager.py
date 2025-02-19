@@ -5,6 +5,7 @@ import torch.fx as fx
 
 from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.config import XpuGraphConfig, Target
+from xpu_graph.fx_utils import FxStage
 from .pattern import Pattern, PatternGroup
 
 class PatternManager(Optimizer):
@@ -33,6 +34,11 @@ class PatternManager(Optimizer):
         from .targets import get_all_patterns as get_target_patterns
         for group, patterns in get_target_patterns(config).items():
             self._patterns[group] += patterns
+        
+        self._stage = FxStage.pregrad
+
+    def set_stage(self, stage: FxStage):
+        self._stage = stage
 
     def process(self, gm: fx.GraphModule) -> bool:
         changed = False
@@ -40,7 +46,8 @@ class PatternManager(Optimizer):
         for group in sorted(self._patterns.keys()):
             for i in range(loop_time):
                 for pattern in self._patterns[group]:
-                    changed = changed or pattern(gm)
+                    if self._stage in pattern._stages:
+                        changed = changed or pattern(gm)
 
         return changed
 
@@ -66,5 +73,5 @@ class PatternManager(Optimizer):
                     match = subgraph_rewriter.replace_pattern(gm, args[0], args[1])
 
                     return len(match)
-
+                
             self._patterns.append(_Pattern())

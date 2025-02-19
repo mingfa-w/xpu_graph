@@ -7,6 +7,7 @@ from torch._dynamo.convert_frame import compile_lock
 from torch.utils._python_dispatch import _disable_current_modes
 from .config import XpuGraphConfig
 from .utils import logger
+from .fx_utils import FxStage
 
 """ A base cache class does not store any thing"""
 
@@ -20,12 +21,12 @@ class XpuGraphCache:
         return hashkey
 
     def save_gm(
-        self, key, value: torch.fx.GraphModule, expire=None
+        self, key, graph_id: int, value: torch.fx.GraphModule, expire=None
     ) -> torch.fx.GraphModule:
         # Note: since GraphModules ser/des may do canonicalization, so the cached version should be returned
         return value
 
-    def load_gm(self, key):
+    def load_gm(self, key, graph_id: int):
         return None
 
     def delete_gm(self, key):
@@ -45,9 +46,9 @@ class XpuGraphLocalCache(XpuGraphCache):
         os.environ["TORCHINDUCTOR_CACHE_DIR"] = os.path.join(cache_path, "inductor")
 
     def save_gm(
-        self, key, value: torch.fx.GraphModule, expire=None
+        self, key, graph_id: int, value: torch.fx.GraphModule, expire=None
     ) -> torch.fx.GraphModule:
-        artifact_path = self._graph_path(key)
+        artifact_path = self._graph_path(key, graph_id)
         logger.info(f"Save cache in location: {artifact_path}")
         with compile_lock, _disable_current_modes():
             with open(artifact_path, "wb+") as f:
@@ -56,8 +57,8 @@ class XpuGraphLocalCache(XpuGraphCache):
                 cached_graph = pickle.load(f)
         return cached_graph
 
-    def load_gm(self, key):
-        artifact_path = self._graph_path(key)
+    def load_gm(self, key, graph_id: int):
+        artifact_path = self._graph_path(key, graph_id)
         if os.path.isfile(artifact_path):
             with compile_lock, _disable_current_modes():
                 logger.info(f"Use cache in location: {artifact_path}")
@@ -71,8 +72,8 @@ class XpuGraphLocalCache(XpuGraphCache):
         if key in self.cache:
             del self.cache[key]
 
-    def _graph_path(self, key):
-        fname = f"xpu_graph_{key}.pt"
+    def _graph_path(self, key, graph_id: int):
+        fname = f"xpu_graph_{key}.{graph_id}.pt"
         artifact_cache = os.path.join(self._path, fname)
         return artifact_cache
 

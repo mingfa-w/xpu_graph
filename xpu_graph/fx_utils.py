@@ -1,5 +1,12 @@
 import torch
 import torch.utils._pytree as pytree
+from enum import Enum
+
+class FxStage(Enum):
+    pregrad = "pregrad"
+    forward = "forward"
+    backward = "backward"
+
 
 from torch.fx import map_arg
 from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_make_fx
