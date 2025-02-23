@@ -8,7 +8,8 @@ from xpu_graph.config import OptLevel
 
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
-from xpu_graph.fx_utils import trace_and_inline
+from xpu_graph.fx_utils import trace_and_inline, FxStage
+
 from ..utils.check_ops import (
     check_add_op,
     check_sub_op,
@@ -168,6 +169,7 @@ def layernorm_replacement(input, weight, bias, epsilon):
 
 class FusedLayerNorm(Pattern):
     _opt_level = OptLevel.level2
+    _stages = [FxStage.pregrad, FxStage.forward]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False

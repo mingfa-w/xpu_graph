@@ -61,6 +61,47 @@ def layernorm_test(xpu_graph, func):
         assert is_similar(norm1, norm)
 
 
+def layernorm_test_with_loss_and_grad(xpu_graph, func):
+    inputs = torch.randn(
+        (
+            8,
+            1024,
+        ),
+        device=device,
+        dtype=data_type,
+    )
+    weight = torch.randn((1024,), device=device, dtype=data_type)
+    bias = torch.randn((1024,), device=device, dtype=data_type)
+    ref = torch.randn((8, 1024), device=device, dtype=data_type)
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+
+    inputs0, weight0, bias0 = (
+        inputs.clone().requires_grad_(),
+        weight.clone().requires_grad_(),
+        bias.clone().requires_grad_(),
+    )
+    norm0 = compiled(inputs0, weight0, bias0)
+    loss0 = F.mse_loss(norm0, ref)
+    loss0.backward()
+
+    inputs1, weight1, bias1 = (
+        inputs.clone().requires_grad_(),
+        weight.clone().requires_grad_(),
+        bias.clone().requires_grad_(),
+    )
+    norm1 = func(inputs1, weight1, bias1)
+    loss1 = F.mse_loss(norm1, ref)
+    loss1.backward()
+
+    assert is_similar(norm0.detach(), norm1.detach())
+    assert is_similar(loss0.detach(), loss1.detach())
+
+    assert is_similar(inputs0.grad, inputs1.grad)
+
+    assert maybe_similar(weight0.grad, weight1.grad)
+    assert maybe_similar(bias0.grad, bias1.grad)
+
+
 class TestLayerNorm:
     def setup_class(self):
         config = xpu_graph.XpuGraphConfig(opt_level=OptLevel.level2, freeze=False)
@@ -73,6 +114,13 @@ class TestLayerNorm:
     def test_layernrom_patterns(self, pattern_func):
         layernorm_test(self.xpu_graph_backend, pattern_func)
 
+    @pytest.mark.parametrize(
+        "pattern_func",
+        [fn2, fn3],
+    )
+    def test_layernrom_patterns_with_loss_and_grad(self, pattern_func):
+        layernorm_test_with_loss_and_grad(self.xpu_graph_backend, pattern_func)
+
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
@@ -83,3 +131,7 @@ if __name__ == "__main__":
     layernorm_test(xpu_graph_backend, fn1)
     layernorm_test(xpu_graph_backend, fn2)
     layernorm_test(xpu_graph_backend, fn3)
+    layernorm_test_with_loss_and_grad(xpu_graph_backend, fn0)
+    layernorm_test_with_loss_and_grad(xpu_graph_backend, fn1)
+    layernorm_test_with_loss_and_grad(xpu_graph_backend, fn2)
+    layernorm_test_with_loss_and_grad(xpu_graph_backend, fn3)
