@@ -19,13 +19,6 @@ class RMSNormModule(torch.nn.Module):
         )
 
 
-class LayerNormModule(torch.nn.Module):
-    def forward(self, input, weight, bias, epsilon):
-        return torch.nn.functional.layer_norm(
-            input, input.shape[-1:], weight, bias, epsilon
-        )
-
-
 class FuseSliceModule(torch.nn.Module):
     def forward(self, input_tensor, slices_index, slice_len):
         if len(input_tensor.shape) != 2:
@@ -69,7 +62,6 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
 def get_structure_replacements():
     return {
         "FusedRMSNorm": RMSNormModule,
-        "FusedLayerNorm": LayerNormModule,
         "FusedSlice": FuseSliceModule,
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule,

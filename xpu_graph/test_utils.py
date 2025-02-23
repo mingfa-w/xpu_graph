@@ -8,6 +8,12 @@ def is_similar(result, expected, rtol=0.01, atol=0.01):
     )
 
 
+def maybe_similar(result, expected, rtol=0.01, atol=0.01):
+    if result is None or expected is None:
+        return result is None and expected is None
+    return is_similar(result, expected, rtol, atol)
+
+
 def assertTensorsEqual(
     a,
     b,
@@ -78,4 +84,4 @@ def assertTensorsEqual(
                 tc.assertLessEqual(diff, prec, message)
         else:
             max_err = diff.max()
-            self.assertLessEqual(max_err, prec, message)
+            tc.assertLessEqual(max_err, prec, message)
