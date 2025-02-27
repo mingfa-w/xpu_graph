@@ -8,6 +8,7 @@ from xpu_graph.config import OptLevel
 
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
+from xpu_graph.fx_utils import trace_and_inline
 from ..utils.check_ops import (
     check_add_op,
     check_sub_op,
@@ -19,7 +20,6 @@ from ..utils.check_ops import (
     check_sqrt_op,
     check_rsqrt_op,
     get_input_node,
-    get_actual_node,
     get_input_kw_node,
     get_shape,
 )
@@ -36,13 +36,13 @@ def _is_unaffined_layernorm(
     sub = node0
     if not check_sub_op(sub):
         return False, None
-    input = get_actual_node(node0, 0)
+    input = get_input_node(node0, 0)
     # if len(get_shape(input)) <= 2:
     #     return False, None
     mean = get_input_node(node0, 1)
     if (
         not check_mean_op(mean)
-        or get_actual_node(mean, 0) != input
+        or get_input_node(mean, 0) != input
         or get_input_node(mean, 1) != [-1]
         or get_input_node(mean, 2) != True
     ):
@@ -76,7 +76,7 @@ def _is_unaffined_layernorm(
             var, eps = eps, var
 
     if (
-        get_actual_node(var, 0) != input
+        get_input_node(var, 0) != input
         or get_input_node(var, 1) != [-1]
         or get_input_kw_node(var, "keepdim") != True
         or not isinstance(eps, (float, int))
@@ -183,8 +183,8 @@ class FusedLayerNorm(Pattern):
                 eps = 1e-6
 
             with graph_module.graph.inserting_before(node):
-                layer_norm_node = graph_module.graph.call_function(
-                    layernorm_replacement, args=(input, weight, bias, eps)
+                layer_norm_node = trace_and_inline(graph_module, layernorm_replacement)(
+                    input, weight, bias, eps
                 )
 
             node.replace_all_uses_with(layer_norm_node)
