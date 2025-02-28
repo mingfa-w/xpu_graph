@@ -37,6 +37,10 @@ class XpuGraph:
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, sample_inputs):
+            if self._config.ship_all_pass:
+                return gm
+
+            # return gm
             from torch._guards import detect_fake_mode
 
             fake_mode = detect_fake_mode(sample_inputs)
@@ -56,6 +60,7 @@ class XpuGraph:
                 if xpu_compiled is None:
                     xpu_compiled = self._pass_manager(gm, fake_inputs)
                     xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+                xpu_compiled = gm
 
                 logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                 logger.info("xpu_graph passes complete")
@@ -63,7 +68,7 @@ class XpuGraph:
                     f"after xpu_graph, nodes num: {len(xpu_compiled.graph.nodes)}"
                 )
 
-                if self._config.vendor_compiler:
+                if self._config.vendor_compiler_config:
 
                     from .backends import vendor_compiler
 
@@ -71,7 +76,7 @@ class XpuGraph:
                         xpu_compiled,
                         fake_inputs,
                         self._config.target,
-                        self._config.vendor_compiler,
+                        self._config.vendor_compiler_config,
                     )
 
             return xpu_compiled
@@ -81,8 +86,6 @@ class XpuGraph:
             lifted_gm, gs = aot_export_module(
                 dynamo_gm, example_inputs, trace_joint=False
             )
-            print(f"dynamo_gm: {dynamo_gm.graph}")
-            print(f"graph signature: {gs}")
 
             logger.debug(f"before unlift, graph like:\n {lifted_gm.graph}")
 

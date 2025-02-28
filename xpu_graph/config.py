@@ -40,6 +40,7 @@ class OptLevel(Enum):
             return self.value == other.value
         return NotImplemented
 
+
 class ExecuteMode(Enum):
     eager = "eager"
     graph = "graph"
@@ -54,4 +55,10 @@ class XpuGraphConfig:
     use_xpu_ops: bool = False  # Use xpu_ops or not
     freeze: bool = False  # Freeze parameter, will do better constant_folding
     constant_folding: bool = False
-    vendor_compiler: Optional[Dict[str, Any]] = None
+    ship_all_pass: bool = (
+        False  # Default false, use for debug, which will skip all passes of xpu_ops
+    )
+    # Mode: {"cudagraphs", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"}
+    # we add a "cudagraphs" option. At this mode, only torch.compile in-tree backend cudugraphs will be enable.
+    # https://pytorch.org/docs/stable/torch.compiler_cudagraph_trees.html
+    vendor_compiler_config: Optional[Dict[str, Any]] = None
