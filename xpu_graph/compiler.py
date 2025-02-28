@@ -5,6 +5,7 @@ import torch
 from torch._dynamo.backends.common import aot_autograd
 from torch._functorch.aot_autograd import aot_export_module
 from torch.fx.experimental.proxy_tensor import make_fx
+from torch._decomp import pre_autograd_decomposition_table
 from torch._guards import detect_fake_mode
 
 from .passes.pass_manager import PassManager

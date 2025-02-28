@@ -53,6 +53,9 @@ class PassManager:
         gm = make_fx(gm, pre_dispatch=pre_dispatch, record_module_stack=True)(
             *example_inputs
         )
+        gm.delete_all_unused_submodules()
+        gm.graph.lint()
+        gm.recompile()
         return gm
 
     def get_pattern_manager(self):

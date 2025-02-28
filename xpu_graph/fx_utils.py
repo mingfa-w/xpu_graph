@@ -2,6 +2,7 @@ import torch
 import torch.utils._pytree as pytree
 from enum import Enum
 
+
 class FxStage(Enum):
     pregrad = "pregrad"
     forward = "forward"
