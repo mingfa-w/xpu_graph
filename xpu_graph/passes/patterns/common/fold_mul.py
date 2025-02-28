@@ -4,9 +4,9 @@ import torch.fx as fx
 from xpu_graph.passes.patterns.pattern import Pattern
 
 
-class FoldAdd0(Pattern):
+class FoldMul1(Pattern):
     """
-    Fold aten.add(x, zero_like) -> x
+    Fold aten.mul(x, one_like) -> x
     """
 
     def process(self, gm: fx.GraphModule):
@@ -21,21 +21,21 @@ class FoldAdd0(Pattern):
             if node.op == "call_function" and node.target in add_tup
         ]
 
-        def _is_zero_like(inp) -> bool:
+        def _is_one_like(inp) -> bool:
             scalar_tup = (
                 int,
                 float,
             )
-            if type(inp) in scalar_tup and inp == 0:
+            if type(inp) in scalar_tup and inp == 1:
                 return True
-            zero_like_tup = (
-                torch.ops.aten.zeros_like.default,
-                torch.ops.aten.zeros.default,
+            one_like_tup = (
+                torch.ops.aten.ones_like.default,
+                torch.ops.aten.ones.default,
             )
             if (
                 isinstance(inp, fx.Node)
                 and inp.op == "call_function"
-                and inp.target in zero_like_tup
+                and inp.target in one_like_tup
             ):
                 return True
             return False
@@ -45,10 +45,10 @@ class FoldAdd0(Pattern):
             inp1 = add.args[1]
             res = None
             is_match = False
-            if _is_zero_like(inp0):
+            if _is_one_like(inp0):
                 is_match = True
                 res = inp1
-            elif _is_zero_like(inp1):
+            elif _is_one_like(inp1):
                 is_match = True
                 res = inp0
 

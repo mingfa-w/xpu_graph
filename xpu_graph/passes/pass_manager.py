@@ -2,7 +2,6 @@ import torch
 import torch.fx as fx
 
 
-# TODO: Add a config to make user config this PassManager
 class PassManager:
     def __init__(self, config):
 
@@ -15,10 +14,6 @@ class PassManager:
         from .patterns.pattern_manager import PatternManager
 
         self._pattern_manager = PatternManager(config)
-
-        # from .inline_module import InlineModuleAndDecomp
-        # if InlineModuleAndDecomp._opt_level <= config.opt_level:
-        #     self._passes.append(InlineModuleAndDecomp())
 
         from .dce import Dce
 
@@ -33,8 +28,7 @@ class PassManager:
         if config.constant_folding:
             from .constant_folding import ConstantFolding
 
-            if ConstantFolding._opt_level <= config.opt_level:
-                self._passes.append(ConstantFolding())
+            self._passes.append(ConstantFolding())
 
         self._passes.append(self._pattern_manager)
 
@@ -47,11 +41,6 @@ class PassManager:
             changed = False
             for pass_ in self._passes:
                 changed = changed or pass_(gm)
-
-            # from .inline_module import InlineModuleAndDecomp
-            # inliner = InlineModuleAndDecomp(gm)
-            # gm = inliner.transform()
-            # print(gm.graph)
 
         gm.recompile()
 
