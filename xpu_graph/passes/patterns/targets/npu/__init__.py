@@ -2,7 +2,7 @@ import pkgutil
 import importlib
 
 from xpu_graph.passes.patterns.pattern import Pattern, AutoMatchPattern, PatternGroup
-from xpu_graph.config import XpuGraphConfig, Target
+from xpu_graph.config import XpuGraphConfig
 from xpu_graph.utils import logger
 
 
@@ -16,14 +16,6 @@ def get_all_patterns(config: XpuGraphConfig):
     for _, module_name, _ in pkgutil.iter_modules(__path__):
         module = importlib.import_module(f"{__name__}.{module_name}")
 
-        structure_preplacements = []
-        if config.target == Target.mlu:
-            from ..targets.mlu.structure_replacements import get_structure_replacements
-            structure_preplacements = get_structure_replacements()
-        elif config.target == Target.npu:
-            from ..targets.npu.structure_replacements import get_structure_replacements
-            structure_preplacements = get_structure_replacements()
-
         for name in dir(module):
             pat = getattr(module, name)
             if (
@@ -32,10 +24,9 @@ def get_all_patterns(config: XpuGraphConfig):
                 and pat not in (Pattern, AutoMatchPattern)
                 and pat._opt_level <= config.opt_level
             ):
-                if pat.__name__ in structure_preplacements:
-                    patterns[pat._pattern_group].append(pat(structure_preplacements[pat.__name__]))
+                patterns[pat._pattern_group].append(pat())
 
     for group, group_patterns in patterns.items():
-        logger.debug(f"xpu_graph enable builtin structure {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}")
+        logger.debug(f"xpu_graph enable builtin npu {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}")
 
     return patterns
