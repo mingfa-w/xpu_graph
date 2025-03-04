@@ -37,7 +37,7 @@ class XpuGraph:
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, sample_inputs):
-            if self._config.ship_all_pass:
+            if self._config.skip_all_pass:
                 return gm
 
             # return gm
