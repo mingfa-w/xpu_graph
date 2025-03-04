@@ -4,7 +4,6 @@ import torch.fx as fx
 
 class PassManager:
     def __init__(self, config):
-
         from .optimizer import Optimizer
 
         Optimizer._debug = config.debug
@@ -36,6 +35,7 @@ class PassManager:
         changed = True
         while changed:
             from torch.fx.passes.shape_prop import ShapeProp
+
             ShapeProp(gm).propagate(*example_inputs)
             changed = False
             for pass_ in self._passes:

@@ -8,7 +8,8 @@ from xpu_graph.config import OptLevel
 from xpu_graph.utils import logger
 from xpu_graph.constant_manager import get_constant_manager, is_constant
 
-__all__ = ['ConstantFolding']
+__all__ = ["ConstantFolding"]
+
 
 def _no_folding(node: fx.Node):
     no_fold_call_function_list = [
@@ -18,8 +19,10 @@ def _no_folding(node: fx.Node):
     if node.op == "call_function":
         return node.target in no_fold_call_function_list
 
+
 class ConstantFolding(Optimizer):
     _opt_level = OptLevel.level1
+
     def __init__(self):
         super().__init__()
 
@@ -33,11 +36,14 @@ class ConstantFolding(Optimizer):
 
         # For better readability, we insert get_attr node in the front of graph
         for get_attr_insert_point in gm.graph.nodes:
-            if get_attr_insert_point.op != "get_attr" and get_attr_insert_point.op != "placeholder":
+            if (
+                get_attr_insert_point.op != "get_attr"
+                and get_attr_insert_point.op != "placeholder"
+            ):
                 break
 
         for node in graph.nodes:
-            if node.op!= "call_function":
+            if node.op != "call_function":
                 continue
             if _no_folding(node):
                 continue
@@ -47,11 +53,16 @@ class ConstantFolding(Optimizer):
 
                 diable_fake_mode = None
                 from packaging import version
+
                 torch_version = version.parse(torch.__version__[:5])
-                if torch_version < version.parse('2.5'):
-                    from torch.fx.experimental.proxy_tensor import maybe_disable_fake_tensor_mode as diable_fake_mode
+                if torch_version < version.parse("2.5"):
+                    from torch.fx.experimental.proxy_tensor import (
+                        maybe_disable_fake_tensor_mode as diable_fake_mode,
+                    )
                 else:
-                    from torch._subclasses.fake_tensor import unset_fake_temporarily as diable_fake_mode
+                    from torch._subclasses.fake_tensor import (
+                        unset_fake_temporarily as diable_fake_mode,
+                    )
 
                 logger.info(f"start constant folding: f{node.name} f{node.target}")
 
@@ -59,9 +70,11 @@ class ConstantFolding(Optimizer):
                     constant_value = node.target(*new_args, **node.kwargs)
 
                 constant_name = node.name + "_constant_folding"
-                constant_name =  get_constant_manager(gm).register_constant(constant_value, constant_name)
+                constant_name = get_constant_manager(gm).register_constant(
+                    constant_value, constant_name
+                )
                 with graph.inserting_before(get_attr_insert_point):
-                    constant_node = graph.create_node('get_attr', constant_name)
+                    constant_node = graph.create_node("get_attr", constant_name)
                     node.replace_all_uses_with(constant_node)
 
                 # Delete origin node in order we can delete some useless constant later.

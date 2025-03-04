@@ -69,7 +69,6 @@ class XpuGraph:
                 )
 
                 if self._config.vendor_compiler_config:
-
                     from .backends import vendor_compiler
 
                     return vendor_compiler(
