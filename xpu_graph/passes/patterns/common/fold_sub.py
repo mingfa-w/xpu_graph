@@ -4,7 +4,7 @@ import torch.fx as fx
 from xpu_graph.passes.patterns.pattern import Pattern
 
 
-class FoldSub1(Pattern):
+class FoldSub0(Pattern):
     """
     Fold aten.sub(x, zero_like) -> x
     """
@@ -23,7 +23,7 @@ class FoldSub1(Pattern):
                 int,
                 float,
             )
-            if type(inp) in scalar_tup and inp == 1:
+            if type(inp) in scalar_tup and inp == 0:
                 return True
             zero_like_tup = (
                 torch.ops.aten.zeros_like.default,

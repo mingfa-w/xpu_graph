@@ -11,14 +11,14 @@ class FoldMul1(Pattern):
 
     def process(self, gm: fx.GraphModule):
         changed = False
-        add_tup = (
-            torch.ops.aten.add.Tensor,
-            torch.ops.aten.add.Scalar,
+        mul_tup = (
+            torch.ops.aten.mul.Tensor,
+            torch.ops.aten.mul.Scalar,
         )
         candidates = [
             node
             for node in gm.graph.nodes
-            if node.op == "call_function" and node.target in add_tup
+            if node.op == "call_function" and node.target in mul_tup
         ]
 
         def _is_one_like(inp) -> bool:
@@ -40,9 +40,9 @@ class FoldMul1(Pattern):
                 return True
             return False
 
-        for add in candidates:
-            inp0 = add.args[0]
-            inp1 = add.args[1]
+        for mul in candidates:
+            inp0 = mul.args[0]
+            inp1 = mul.args[1]
             res = None
             is_match = False
             if _is_one_like(inp0):
@@ -54,14 +54,14 @@ class FoldMul1(Pattern):
 
             if is_match:
                 changed = True
-                with gm.graph.inserting_before(add):
+                with gm.graph.inserting_before(mul):
                     from xpu_graph.passes.patterns.utils.expand_tensor import (
                         expand_tensor,
                     )
 
-                    expand = expand_tensor(gm, res, add)
-                add.replace_all_uses_with(expand)
-                gm.graph.erase_node(add)
+                    expand = expand_tensor(gm, res, mul)
+                mul.replace_all_uses_with(expand)
+                gm.graph.erase_node(mul)
 
         gm.graph.lint()
         gm.recompile()
