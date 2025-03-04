@@ -5,7 +5,7 @@ import torch
 import xpu_graph
 
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import assertTensorsEqual
+from xpu_graph.test_utils import assertTensorsEqual, need_xpu_graph_logs
 
 
 def _sfdp_pattern_1(query, key, value, inv_scale):
@@ -426,7 +426,8 @@ class TestFA:
         ],
     )
     def test_sfdp_patterns(self, caplog, pattern_func):
-        fa_test(self.xpu_graph_backend, pattern_func)
+        with need_xpu_graph_logs():
+            fa_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedFlashAttention changed graph" in caplog.text
 
 

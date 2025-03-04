@@ -1,5 +1,7 @@
 import torch
 from torch.testing._internal.common_utils import TestCase
+from .utils import logger
+import logging
 
 
 def is_similar(result, expected, rtol=0.01, atol=0.01):
@@ -78,4 +80,18 @@ def assertTensorsEqual(
                 tc.assertLessEqual(diff, prec, message)
         else:
             max_err = diff.max()
-            self.assertLessEqual(max_err, prec, message)
+            tc.assertLessEqual(max_err, prec, message)
+
+class need_xpu_graph_logs:
+    def __init__(self):
+        self.original_propagate = logger.propagate
+        self.original_level = logger.level
+
+    def __enter__(self):
+        logger.propagate = True
+        logger.setLevel(logging.DEBUG)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        logger.propagate = self.original_propagate
+        logger.setLevel(self.original_level)

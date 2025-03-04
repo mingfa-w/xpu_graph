@@ -5,7 +5,7 @@ import torch
 import xpu_graph
 
 from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import assertTensorsEqual
+from xpu_graph.test_utils import assertTensorsEqual, need_xpu_graph_logs
 
 
 def fn0(query, key, value, inv_scale=1.0):
@@ -58,7 +58,8 @@ class TestBMM:
         [fn0, fn1, fn2],
     )
     def test_sfdp_patterns(self, caplog, pattern_func):
-        bmm_test(self.xpu_graph_backend, pattern_func)
+        with need_xpu_graph_logs():
+            bmm_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedBMM changed graph" in caplog.text
 
 
