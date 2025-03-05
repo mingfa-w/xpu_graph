@@ -52,6 +52,7 @@ class FusedMultipleSliceCat(Pattern):
         self.target_mod = target_mod
 
     def process(self, graph_module: fx.GraphModule):
+        #import pdb;pdb.set_trace()
         changed = False
         graph_module.add_submodule(
             "fuse_slice_cat",
