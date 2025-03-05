@@ -17,6 +17,10 @@ jobs:
           cd /data01/wangmingfa/mlu-ci
           sudo rm -rf xpu_graph
           git clone https://github.com/BD-Seed-HHW/xpu_graph.git
+          cd xpu_graph
+          git fetch origin ${{ github.event.pull_request.merge_commit_sha }}:pull/${{ github.event.pull_request.number }}
+          git checkout pull/${{ github.event.pull_request.number }}
+          echo "Checked out commit SHA: $(git rev-parse HEAD)"
   run-tests:
     name: Run xpu_graph tests
     needs: [clone-code]
@@ -36,4 +40,5 @@ jobs:
           cd /host/xpu_graph
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/neuware/lib64
           pip install --root-user-action=ignore -e .
+          export MLU_VISIBLE_DEVICES=7
           pytest tests/mlu/test_*
