@@ -60,7 +60,6 @@ class XpuGraph:
                 if xpu_compiled is None:
                     xpu_compiled = self._pass_manager(gm, fake_inputs)
                     xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
-                xpu_compiled = gm
 
                 logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                 logger.info("xpu_graph passes complete")
