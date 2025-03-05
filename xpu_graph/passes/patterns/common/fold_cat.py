@@ -64,4 +64,7 @@ class FoldCatCat(Pattern):
                     node.replace_all_uses_with(concat_node)
                     gm.graph.erase_node(node)
                 changed = True
+
+        gm.graph.lint()
+        gm.recompile()
         return changed
