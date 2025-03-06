@@ -30,7 +30,7 @@ def npu_compiler(
     constant_folding: bool = True,
     cache: XpuGraphCache = default_cache(),
     debug: bool = False,
-    vendor_compiler_config: Dict[str, Any] = {"mode": "reduce-overhead"},
+    vendor_compiler_config: Dict[str, Any] = {"mode": "default"},
 ):
     config = XpuGraphConfig(
         target=Target.npu,
