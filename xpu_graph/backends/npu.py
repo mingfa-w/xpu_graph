@@ -8,6 +8,7 @@ def npu_compile(
     from torch._inductor.compile_fx import compile_fx
     from torch import _TorchCompileInductorWrapper
 
+    # default means None. In torch, _TorchCompileInductorWrapper's apply_mode just passes.
     mode = config_dict.get("mode", "default")
     options = {}
     dynamic = config_dict.get("dynamic", False)
