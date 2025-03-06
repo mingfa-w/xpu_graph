@@ -30,7 +30,7 @@ class FuseSliceModule(torch.nn.Module):
         slices_index = torch.tensor(
             slices_index, dtype=torch.int32, device=input_tensor.device
         )
-        output = fused_slice_low(
+        output = torch.ops.torch_npu_triton.fused_slice_low(
             input_tensor,
             slices_index,
             slice_len,
@@ -41,21 +41,28 @@ class FuseSliceModule(torch.nn.Module):
 
 class FuseSliceCatSameInputModule(torch.nn.Module):
     def forward(self, input_tensor, slices):
+        #import pdb;pdb.set_trace()
         if len(input_tensor.shape) != 2:
             raise NotImplementedError("input must be 2d")
-        indices = [i for start, end in slices for i in range(start, end)]
+        
+        elements = 0    
+        for start,end in slices:
+            length = end - start
+            elements += length
+            elements = sum(end-start for start,end in slices)
+        import itertools
+        plain_slices = list(itertools.chain(*slices))
+
         rows, _ = input_tensor.shape
-        indices_tensor = torch.tensor(
-            indices, dtype=torch.int32, device=input_tensor.device
-        )
-        return fused_slice_cat(
+        return torch.ops.torch_npu_triton.fused_slice_cat(
             input_tensor,
-            indices_tensor,
+            plain_slices, 
+            elements,
             rows,
-            len(indices),
             input_tensor.stride(0),
-            16384,  # blocksize
         )
+        
+        
 
 
 def get_structure_replacements():

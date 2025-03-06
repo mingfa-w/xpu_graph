@@ -33,7 +33,7 @@ class ConcatenateSumOperation2(nn.Module):
             sequence_lengths, device=device, dtype=torch.int32
         )
 
-        return npu_triton_fuse_sum_cat_3d(
+        return torch.ops.torch_npu_triton.fuse_sum_cat_3d(
             inputs,
             batch_size,
             lengths_tensor,
@@ -51,7 +51,7 @@ class ConcatenateSumOperation1(nn.Module):
         max_sequence_length = max(sequence_lengths)
         length_tensor = torch.tensor(sequence_lengths, dtype=torch.int32, device=device)
         if keep_dims is True and cat_axis != 0:
-            output = npu_triton_fuse_sum_cat_3d(
+            output = torch.ops.torch_npu_triton.fuse_sum_cat_3d(
                 inputs,
                 batch_size,
                 length_tensor,
@@ -60,7 +60,7 @@ class ConcatenateSumOperation1(nn.Module):
                 max_sequence_length,
             )
         else:
-            output = npu_triton_fuse_sum_cat_2d(
+            output = torch.ops.torch_npu_triton.triton_fuse_sum_cat_2d(
                 inputs,
                 length_tensor,
                 batch_size,
@@ -92,7 +92,7 @@ class SliceSumCatOperation(nn.Module):
         slice_tensor = torch.tensor(slice_, dtype=torch.int32, device=input.device)
         output_num = len(slice_param)
 
-        return fuse_slice_sum_cat(input, slice_tensor, processor_count, output_num)
+        return torch.ops.torch_npu_triton.fuse_slice_sum_cat(input, slice_tensor, processor_count, output_num)
 
 
 # (slice->sum) * n
@@ -154,6 +154,7 @@ def find_slice_sum_cat(gm: fx.GraphModule):
     if slice_dict == {}:
         return changed
     # slice->sum->cat
+    
     for node in gm.graph.nodes:
         is_cat, _ = check_cat_op(node)
         if not is_cat:
@@ -164,6 +165,7 @@ def find_slice_sum_cat(gm: fx.GraphModule):
         )
         if not is_match:
             continue
+        #import pdb;pdb.set_trace()
         with gm.graph.inserting_before(node):
             new_node = gm.graph.call_module(
                 "npu_triton_fused_slice_sum_cat",
@@ -332,9 +334,12 @@ class FusedCatSum(Pattern):
         gm.add_submodule("npu_triton_fused_slice_sum_cat", SliceSumCatOperation())
         changed1 = True
         while changed1:
+            
             changed1 = find_slice_sum_cat(gm)
             changed = changed | changed1
         #import pdb;pdb.set_trace()
+        gm.graph.lint()
+        gm.recompile()
         return changed
         gm.add_submodule(
             "npu_triton_fused_cat_sum_1_replacement", ConcatenateSumOperation1()
