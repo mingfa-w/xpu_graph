@@ -27,16 +27,17 @@ def mlu_compiler(
 def npu_compiler(
     freeze: bool = False,
     opt_level: OptLevel = OptLevel.level1,
-    graph: bool = True,
-    constant_folding: bool = False,
+    constant_folding: bool = True,
     cache: XpuGraphCache = default_cache(),
+    debug: bool = False,
+    vendor_compiler_config: Dict[str, Any] = {"mode": "default"},
 ):
     config = XpuGraphConfig(
         target=Target.npu,
         freeze=freeze,
         opt_level=opt_level,
         constant_folding=constant_folding,
+        debug=debug,
+        vendor_compiler_config=vendor_compiler_config,
     )
-    if graph:
-        config.vendor_compiler = {"mode": "default"}
     return XpuGraph(config, cache)
