@@ -4,21 +4,18 @@ import torch.fx as fx
 from xpu_graph.passes.patterns.pattern import Pattern
 
 
-class FoldAdd0(Pattern):
+class FoldSub0(Pattern):
     """
-    Fold aten.add(x, zero_like) -> x
+    Fold aten.sub(x, zero_like) -> x
     """
 
     def process(self, gm: fx.GraphModule):
         changed = False
-        add_tup = (
-            torch.ops.aten.add.Tensor,
-            torch.ops.aten.add.Scalar,
-        )
+        sub_tup = (torch.ops.aten.sub.Tensor, torch.ops.aten.sub.Scalar)
         candidates = [
             node
             for node in gm.graph.nodes
-            if node.op == "call_function" and node.target in add_tup
+            if node.op == "call_function" and node.target in sub_tup
         ]
 
         def _is_zero_like(inp) -> bool:
@@ -40,28 +37,25 @@ class FoldAdd0(Pattern):
                 return True
             return False
 
-        for add in candidates:
-            inp0 = add.args[0]
-            inp1 = add.args[1]
+        for sub in candidates:
+            inp0 = sub.args[0]
+            inp1 = sub.args[1]
             res = None
             is_match = False
-            if _is_zero_like(inp0):
-                is_match = True
-                res = inp1
-            elif _is_zero_like(inp1):
+            if _is_zero_like(inp1):
                 is_match = True
                 res = inp0
 
             if is_match:
                 changed = True
-                with gm.graph.inserting_before(add):
+                with gm.graph.inserting_before(sub):
                     from xpu_graph.passes.patterns.utils.expand_tensor import (
                         expand_tensor,
                     )
 
-                    expand = expand_tensor(gm, res, add)
-                add.replace_all_uses_with(expand)
-                gm.graph.erase_node(add)
+                    expand = expand_tensor(gm, res, sub)
+                sub.replace_all_uses_with(expand)
+                gm.graph.erase_node(sub)
 
         gm.graph.lint()
         gm.recompile()

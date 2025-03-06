@@ -14,8 +14,9 @@ from .utils import logger
 class XpuGraphCache:
     def cache_key(self, gm: torch.fx.GraphModule, fake_inputs, config: XpuGraphConfig):
         key = f"{gm}-{fake_inputs}-{config}"
-        logger.info(f"Cache Key: \n{key}")
+        logger.debug(f"Cache Key readable: \n{key}")
         hashkey = hashlib.md5(key.encode()).hexdigest()
+        logger.info(f"Cache Key: {hashkey}")
         return hashkey
 
     def save_gm(
@@ -80,6 +81,7 @@ def default_cache():
     cache_path = os.getenv("XPU_GRAPH_CACHE_DIR")
     if cache_path is None:
         import tempfile
+
         cache_path = tempfile.mkdtemp(prefix="xpu_graph_")
         logger.debug(f"Use {cache_path} as default local cache")
     return XpuGraphLocalCache(cache_path)

@@ -27,7 +27,6 @@ class ConstantFolding(Optimizer):
         return all(is_constant(arg) for arg in node.args)
 
     def process(self, gm: torch.fx.GraphModule):
-        # constant_fold(gm)
         changed = False
         graph = gm.graph
         get_attr_insert_point = None
