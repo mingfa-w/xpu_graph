@@ -4,7 +4,7 @@ import torch_mlu
 import triton
 import triton.language as tl
 from typing import List
-from .linear_attention import attention
+from .test_hstu import attention
 
 
 @torch.library.custom_op(
@@ -26,7 +26,7 @@ def linear_attn(
         elif len(bias.shape) == 3 and bias.shape[0] == 1:
             bias = bias.squeeze(0)
             expand = False
-    output_tensor = attention(q, k, v, bias, causal, sm_scale, has_bias, expand)
+    output_tensor = attention(q, k, v, bias, causal, has_bias, expand, 0)
     return output_tensor
 
 
