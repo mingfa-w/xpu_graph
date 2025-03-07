@@ -17,7 +17,7 @@ class XpuGraph:
     def __init__(
         self,
         config: XpuGraphConfig = XpuGraphConfig(),
-        cache: XpuGraphCache = default_cache(),
+        cache: XpuGraphCache = None,
     ):
         self._config = config
         if self._config.debug:
@@ -33,7 +33,11 @@ class XpuGraph:
             torch._inductor.config.freezing = True
 
         self._pass_manager = PassManager(self._config)
-        self._cache = cache
+        if config.enable_cache:
+            if cache:
+                self._cache = cache
+            else:
+                self._cache = default_cache()
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, sample_inputs):
@@ -55,12 +59,14 @@ class XpuGraph:
                 logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
                 logger.info("xpu_graph passes start...")
 
-                hashkey = self._cache.cache_key(gm, fake_inputs, self._config)
-                xpu_compiled = self._cache.load_gm(hashkey)
-                if xpu_compiled is None:
+                if self._config.enable_cache:
+                    hashkey = self._cache.cache_key(gm, fake_inputs, self._config)
+                    xpu_compiled = self._cache.load_gm(hashkey)
+                    if xpu_compiled is None:
+                        xpu_compiled = self._pass_manager(gm, fake_inputs)
+                        xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+                else:
                     xpu_compiled = self._pass_manager(gm, fake_inputs)
-                    xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
-                xpu_compiled = gm
 
                 logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                 logger.info("xpu_graph passes complete")

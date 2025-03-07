@@ -52,6 +52,7 @@ class XpuGraphConfig:
     target: Target = field(default=Target.none)
     opt_level: OptLevel = OptLevel.level1
     dump_graph: bool = False
+    enable_cache: bool = True
     use_xpu_ops: bool = False  # Use xpu_ops or not
     freeze: bool = False  # Freeze parameter, will do better constant_folding
     constant_folding: bool = False
