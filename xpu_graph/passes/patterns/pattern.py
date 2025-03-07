@@ -63,10 +63,16 @@ class AutoMatchPattern(Pattern):
 
         self._rule_map = {}
 
-        markdown = open(self._markdown_path, "r").read()
+        try:
+            with open(self._markdown_path, "r") as file:
+                markdown = file.read()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Markdown file not found: {self._markdown_path}")
+
         matchs = re.findall(r"```mermaid\n([\s\S]+?)\n```", markdown)
         if len(matchs) != 1:
             raise RuntimeError("Markdown format error")
+
         mermaid = matchs[0]
 
         matchs = re.findall("subgraph (SRC\w*?)\n([\s\S]+?)\nend", mermaid)
