@@ -140,12 +140,11 @@ def check_bmm_op(node: fx.Node) -> Tuple[bool, Union[fx.Node, None], Union[fx.No
 
 
 def check_mm_op(node: fx.Node) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
-    if not check_op(node, torch.ops.aten.mm.default):
-        return False, None, None
-
-    arg1 = node.args[0]
-    arg2 = node.args[1]
-    return True, arg1, arg2
+    if check_op(node, torch.ops.aten.mm.default) or check_op(node, torch.ops.aten.matmul.default):
+       arg1 = node.args[0]
+       arg2 = node.args[1]
+       return True, arg1, arg2
+    return False, None, None
 
 
 def check_view(node):
