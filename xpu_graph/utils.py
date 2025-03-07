@@ -4,6 +4,7 @@ import time
 
 logger = logging.getLogger("XPU_GRAPH")
 
+
 def setup_logger(loglevel):
     while logger.hasHandlers() and len(logger.handlers) != 0:
         return
@@ -20,10 +21,10 @@ def setup_logger(loglevel):
 
 def xpu_timer(func):
     def wrapper(*args, **kwargs):
-        if len(args) > 0 and hasattr(args[0], '__class__'):
+        if len(args) > 0 and hasattr(args[0], "__class__"):
             class_name = args[0].__class__.__name__
             start = time.time()
-            res= func(*args, **kwargs)
+            res = func(*args, **kwargs)
             end = time.time()
             logger.debug(f"{class_name}.{func.__name__} cost {end - start}s")
         else:

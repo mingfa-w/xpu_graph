@@ -1,4 +1,4 @@
-from .compiler import XpuGraph
+from .compiler import XpuGraph, optimize_graph
 from .config import Target, OptLevel, XpuGraphConfig
 from .cache import XpuGraphCache, default_cache
 from typing import Dict, Any
@@ -10,7 +10,7 @@ def mlu_compiler(
     freeze: bool = True,
     opt_level: OptLevel = OptLevel.level1,
     constant_folding: bool = True,
-    cache: XpuGraphCache = default_cache(),
+    cache: XpuGraphCache = None,
     debug: bool = False,
     vendor_compiler_config: Dict[str, Any] = {"mode": "reduce-overhead"},
 ):

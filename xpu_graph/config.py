@@ -52,10 +52,11 @@ class XpuGraphConfig:
     target: Target = field(default=Target.none)
     opt_level: OptLevel = OptLevel.level1
     dump_graph: bool = False
+    enable_cache: bool = True
     use_xpu_ops: bool = False  # Use xpu_ops or not
     freeze: bool = False  # Freeze parameter, will do better constant_folding
     constant_folding: bool = False
-    ship_all_pass: bool = (
+    skip_all_pass: bool = (
         False  # Default false, use for debug, which will skip all passes of xpu_ops
     )
     # Mode: {"cudagraphs", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"}

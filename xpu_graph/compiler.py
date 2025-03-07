@@ -4,6 +4,7 @@ import torch
 
 from torch._dynamo.backends.common import aot_autograd
 from torch._functorch.aot_autograd import aot_export_module
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .passes.pass_manager import PassManager
 from .passes.patterns.pattern import Pattern
@@ -13,11 +14,45 @@ from .cache import XpuGraphCache, default_cache
 import logging
 
 
+def optimize_graph(gm, sample_inputs, config=None):
+    fake_mode = FakeTensorMode()
+    fake_mode.allow_non_fake_inputs = True
+    fake_inputs = [
+        fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
+        for x in sample_inputs
+    ]
+
+    if config is None:
+        config = XpuGraphConfig()
+        config.target = Target.mlu
+        config.enable_cache = False
+        config.opt_level = OptLevel.level2
+
+    if config.debug:
+        setup_logger(logging.DEBUG)
+    else:
+        setup_logger(logging.INFO)
+
+    with fake_mode:
+        logger.debug(f"before xpu_optimize_graph, graph like:\n {gm.graph}")
+        logger.info(f"before xpu_optimize_graph, nodes num: {len(gm.graph.nodes)}")
+
+        pass_manager = PassManager(config)
+        xpu_optimized = pass_manager(gm, fake_inputs)
+
+        logger.debug(f"after xpu_optimize_graph, graph like:\n {xpu_optimized.graph}")
+        logger.info(
+            f"after xpu_optimize_graph, nodes num: {len(xpu_optimized.graph.nodes)}"
+        )
+
+    return xpu_optimized
+
+
 class XpuGraph:
     def __init__(
         self,
         config: XpuGraphConfig = XpuGraphConfig(),
-        cache: XpuGraphCache = default_cache(),
+        cache: XpuGraphCache = None,
     ):
         self._config = config
         if self._config.debug:
@@ -33,11 +68,15 @@ class XpuGraph:
             torch._inductor.config.freezing = True
 
         self._pass_manager = PassManager(self._config)
-        self._cache = cache
+        if config.enable_cache:
+            if cache:
+                self._cache = cache
+            else:
+                self._cache = default_cache()
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, sample_inputs):
-            if self._config.ship_all_pass:
+            if self._config.skip_all_pass:
                 return gm
 
             # return gm
@@ -55,12 +94,14 @@ class XpuGraph:
                 logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
                 logger.info("xpu_graph passes start...")
 
-                hashkey = self._cache.cache_key(gm, fake_inputs, self._config)
-                xpu_compiled = self._cache.load_gm(hashkey)
-                if xpu_compiled is None:
+                if self._config.enable_cache:
+                    hashkey = self._cache.cache_key(gm, fake_inputs, self._config)
+                    xpu_compiled = self._cache.load_gm(hashkey)
+                    if xpu_compiled is None:
+                        xpu_compiled = self._pass_manager(gm, fake_inputs)
+                        xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+                else:
                     xpu_compiled = self._pass_manager(gm, fake_inputs)
-                    xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
-                xpu_compiled = gm
 
                 logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                 logger.info("xpu_graph passes complete")
@@ -69,7 +110,6 @@ class XpuGraph:
                 )
 
                 if self._config.vendor_compiler_config:
-
                     from .backends import vendor_compiler
 
                     return vendor_compiler(
