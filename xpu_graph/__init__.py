@@ -1,4 +1,4 @@
-from .compiler import XpuGraph
+from .compiler import XpuGraph, optimize_graph
 from .config import Target, OptLevel, XpuGraphConfig
 from .cache import XpuGraphCache, default_cache
 from typing import Dict, Any
