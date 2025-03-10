@@ -99,7 +99,9 @@ class XpuGraph:
                     xpu_compiled = self._cache.load_gm(hashkey)
                     if xpu_compiled is None:
                         xpu_compiled = self._pass_manager(gm, fake_inputs)
-                        xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+                        # xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+                        if self._config.target != Target("npu"):
+                            xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
                 else:
                     xpu_compiled = self._pass_manager(gm, fake_inputs)
 

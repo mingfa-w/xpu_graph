@@ -9,6 +9,15 @@ from .triton_kernel.fused_slice import (
 #     fused_slice_cat,
 # )
 
+
+from .triton_kernel.fused_slice import (
+    fused_slice_low,
+)
+
+from .triton_kernel.fused_slice_cat import (
+    fused_slice_cat,
+)
+
 class LayerNormModule(torch.nn.Module):
     def forward(self, input, weight, bias, epsilon):
         if weight is not None:
@@ -20,6 +29,7 @@ class LayerNormModule(torch.nn.Module):
         return torch.nn.functional.layer_norm(
             input, input.shape[-1:], weight, bias, epsilon
         )
+
 
 class FuseSliceModule(torch.nn.Module):
     def forward(self, input_tensor, slices_index, slice_len):
@@ -41,8 +51,36 @@ class FuseSliceModule(torch.nn.Module):
         )
         return output
 
+class FuseSliceCatSameInputModule(torch.nn.Module):
+    def forward(self, input_tensor, slices):
+        #import pdb;pdb.set_trace()
+        if len(input_tensor.shape) != 2:
+            raise NotImplementedError("input must be 2d")
+        
+        elements = 0    
+        for start,end in slices:
+            length = end - start
+            elements += length
+            elements = sum(end-start for start,end in slices)
+        import itertools
+        plain_slices = list(itertools.chain(*slices))
+
+        rows, _ = input_tensor.shape
+        return torch.ops.torch_npu_triton.fused_slice_cat(
+            input_tensor,
+            plain_slices, 
+            elements,
+            rows,
+            input_tensor.stride(0),
+        )
+        
+        
+
+
 def get_structure_replacements():
     return {
         "FusedLayerNorm": LayerNormModule,
         "FusedSlice": FuseSliceModule,
+        "FusedCatSlice": FuseSliceCatSameInputModule,
+        "FusedMultipleSliceCat": FuseSliceCatSameInputModule,
     }

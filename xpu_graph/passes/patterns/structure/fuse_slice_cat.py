@@ -172,5 +172,6 @@ class FusedCatSlice(Pattern):
 
         # slice & cat, the inputs of cat are mixed with slice and other ops.
         changed = changed | fuse_mixed_ops_and_catstack(graph_module)
-
+        # graph_module.graph.lint()
+        # graph_module.recompile()
         return changed

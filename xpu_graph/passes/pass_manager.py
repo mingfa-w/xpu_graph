@@ -33,6 +33,15 @@ class PassManager:
 
         self._passes.append(self._pattern_manager)
 
+    # def __call__(self, gm: fx.GraphModule, example_inputs):
+    #     changed = True
+    #     while changed:
+    #         from torch.fx.passes.shape_prop import ShapeProp
+    #         ShapeProp(gm).propagate(*example_inputs)
+    #         changed = False
+    #         for pass_ in self._passes:
+    #             changed = changed or pass_(gm)
+
     def __call__(self, gm: fx.GraphModule, example_inputs):
         changed = True
         from torch._dynamo.utils import detect_fake_mode
@@ -41,8 +50,8 @@ class PassManager:
             fake_mode = torch._subclasses.fake_tensor.FakeTensorMode()
         while changed:
             from torch.fx.passes.shape_prop import ShapeProp
-
-            ShapeProp(gm).propagate(*example_inputs)
+            with fake_mode:
+                ShapeProp(gm).propagate(*example_inputs)
             changed = False
             for pass_ in self._passes:
                 changed = changed or pass_(gm)

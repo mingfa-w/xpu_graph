@@ -24,6 +24,7 @@ class Optimizer(ABC):
 
         if changed:
             logger.debug(f"{self.__class__.__bases__[0].__name__}.{self.__class__.__name__} changed graph")
+            print(f"{self.__class__.__bases__[0].__name__}.{self.__class__.__name__} changed graph")
 
         if changed and self._dump_graph:
             global opt_times

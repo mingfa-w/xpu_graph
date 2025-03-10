@@ -43,10 +43,11 @@ class FusedSlice(Pattern):
         self.target_mod = target_mod
 
     def process(self, graph_module: fx.GraphModule) -> bool:
+        #import pdb;pdb.set_trace()
         changed = False
         graph_module.add_submodule("fused_slice", self.target_mod())
         candi_nodes = find_slice_nodes(graph_module)
-
+        
         for src_node, nodes in candi_nodes.items():
             # grouped by output_len
             divide_nodes = divide_nodes_in_slice_len(nodes)
