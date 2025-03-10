@@ -101,4 +101,12 @@ class TestSumCat:
 
 
 if __name__ == "__main__":
-    pytest.main()
+    config = xpu_graph.config.XpuGraphConfig()
+    config.target = xpu_graph.config.Target.mlu
+    xpu_graph_backend = xpu_graph.compiler.XpuGraph(config)
+    sumcat_test(xpu_graph_backend, fn0)
+    sumcat_test(xpu_graph_backend, fn1)
+    sumcat_test(xpu_graph_backend, fn2)
+    sumcat_test(xpu_graph_backend, fn3)
+    sumcat_test(xpu_graph_backend, fn4)
+    sumcat_test(xpu_graph_backend, fn5)

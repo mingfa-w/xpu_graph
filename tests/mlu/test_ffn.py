@@ -136,4 +136,8 @@ class TestFFN:
 
 
 if __name__ == "__main__":
-    pytest.main()
+    xpu_graph_backend = xpu_graph.mlu_compiler()
+    ffn_test(xpu_graph_backend, fn0)
+    ffn_test(xpu_graph_backend, fn1)
+    ffn_test(xpu_graph_backend, fn2)
+    ffn_test(xpu_graph_backend, fn3)
