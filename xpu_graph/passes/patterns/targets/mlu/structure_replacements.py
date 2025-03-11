@@ -44,7 +44,7 @@ class FuseSliceModule(torch.nn.Module):
             input_tensor.shape[0],
             input_tensor.stride(0),
         )
-        return output
+        return output.view(len(slices_index), input_tensor.shape[0], slice_len)
 
 
 class FuseSliceCatSameInputModule(torch.nn.Module):

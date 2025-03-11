@@ -12,7 +12,18 @@ from ..utils.check_ops import (
 def custom_getitem(tensor_list, index):
     return tensor_list[index]
 
+
 def divide_nodes_in_slice_len(nodes):
+    """
+    Groups nodes based on the length of their slice operation.
+
+    Args:
+        nodes (list): A list of nodes, where each node represents a slice operation.
+
+    Returns:
+        dict: A dictionary where keys are slice lengths (slice_end - slice_start),
+              and values are lists of tuples, each containing a node and its slice start index.
+    """
     divide_nodes = {}
     for n in nodes:
         slice_len = n.args[3] - n.args[2]
@@ -21,12 +32,23 @@ def divide_nodes_in_slice_len(nodes):
         divide_nodes[slice_len].append((n, n.args[2]))
     return divide_nodes
 
+
 def find_slice_nodes(graph_module):
+    """
+    Identifies and groups slice operation nodes in a given graph module.
+
+    Args:
+        graph_module: A graph module containing computation nodes.
+
+    Returns:
+        dict: A dictionary where keys are parent nodes, and values are lists of
+              associated slice operation nodes.
+    """
     candi_nodes = {}
     for node in graph_module.graph.nodes:
         if not check_slice_op(node):
             continue
-        # skip output
+        # Skip slice nodes that are directly connected to the output node.
         if len(node.users) == 1:
             if next(iter(node.users)).target == "output":
                 continue
@@ -39,6 +61,7 @@ def find_slice_nodes(graph_module):
 # one src node slice to multi dst nodes
 class FusedSlice(Pattern):
     _pattern_group = PatternGroup.GROUP1
+
     def __init__(self, target_mod: torch.nn.Module):
         self.target_mod = target_mod
 
