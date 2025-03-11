@@ -9,6 +9,14 @@ from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_mak
 from torch.fx.proxy import Proxy, GraphAppendingTracer
 
 from typing import Union, Callable
+from enum import Enum
+
+
+class FxStage(Enum):
+    inference = "inference"
+    pregrad = "pregrad"
+    forward = "forward"
+    backward = "backward"
 
 
 def unlift_gm(mod, gm, graph_signature):

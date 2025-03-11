@@ -62,7 +62,8 @@ def find_slice_nodes(graph_module):
 class FusedSlice(Pattern):
     _pattern_group = PatternGroup.GROUP1
 
-    def __init__(self, target_mod: torch.nn.Module):
+    def __init__(self, target_mod: torch.nn.Module, *super_args):
+        super().__init__(*super_args)
         self.target_mod = target_mod
 
     def process(self, graph_module: fx.GraphModule) -> bool:

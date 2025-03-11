@@ -1,6 +1,7 @@
 import torch
 import operator
 from torch import nn, fx
+from torch.fx.operator_schemas import normalize_function, normalize_module
 from typing import Union, Tuple
 
 
@@ -9,14 +10,47 @@ def _is_valid_node(node: fx.Node) -> bool:
 
 
 def get_input_node(node, idx):
-    return node.args[idx]
+    if node.op == "call_function":
+        args_kwargs = normalize_function(
+            node.target, node.args, node.kwargs, normalize_to_only_use_kwargs=False
+        )
+    elif node.op == "call_module":
+        root = node.graph.owning_module
+        args_kwargs = normalize_module(
+            root,
+            node.target,
+            node.args,
+            node.kwargs,
+            normalize_to_only_use_kwargs=False,
+        )
+    else:
+        args_kwargs = None
+    if args_kwargs is not None:
+        args, _ = args_kwargs
+        if idx < len(args) and idx >= -len(args):
+            return args[idx]
+    return None
 
 
 def get_input_kw_node(node, key):
-    if key in node.kwargs:
-        return node.kwargs[key]
+    from torch.fx.operator_schemas import normalize_function, normalize_module
+
+    if node.op == "call_function":
+        args_kwargs = normalize_function(
+            node.target, node.args, node.kwargs, normalize_to_only_use_kwargs=True
+        )
+    elif node.op == "call_module":
+        root = node.graph.owning_module
+        args_kwargs = normalize_module(
+            root, node.target, node.args, node.kwargs, normalize_to_only_use_kwargs=True
+        )
     else:
-        return None
+        args_kwargs = None
+    if args_kwargs is not None:
+        _, kwargs = args_kwargs
+        if key in kwargs:
+            return kwargs[key]
+    return None
 
 
 def get_actual_node(node, idx):
