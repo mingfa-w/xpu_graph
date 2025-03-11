@@ -257,3 +257,13 @@ def check_addmm_op(
     arg2 = get_input_node(node, 1)
     arg3 = get_input_node(node, 2)
     return True, arg1, arg2, arg3
+
+def check_where_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.where.self)
+
+def check_zeros_op(node: fx.node) -> bool:
+    is_zeros = check_op(node, torch.ops.aten.zeros.default)
+    if is_zeros:
+        return True, node.args[0]
+    else:
+        return False, 0
