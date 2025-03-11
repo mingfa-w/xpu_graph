@@ -1,14 +1,6 @@
 import torch
 import torch.fx as fx
 import torch_npu
-from .triton_kernel.fused_slice import (
-    fused_slice_low,
-)
-
-# from .triton_kernel.fused_slice_cat import (
-#     fused_slice_cat,
-# )
-
 
 from .triton_kernel.fused_slice import (
     fused_slice_low,
@@ -16,6 +8,10 @@ from .triton_kernel.fused_slice import (
 
 from .triton_kernel.fused_slice_cat import (
     fused_slice_cat,
+)
+
+from .triton_kernel.shortcut_gather import (
+    shortcut_gather,
 )
 
 class LayerNormModule(torch.nn.Module):
@@ -74,7 +70,15 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
             input_tensor.stride(0),
         )
         
-        
+class ShortCutGatherModule(torch.nn.Module):
+    def forward(self, input_tensor, dim, prefix_len):
+        if not (1 < len(input_tensor.shape) < 4):
+            raise NotImplementedError("input must be 2d or 3d")
+        return torch.ops.torch_npu_triton.shortcut_gather(
+            input_tensor,
+            dim,
+            prefix_len,
+        )
 
 
 def get_structure_replacements():
@@ -83,4 +87,5 @@ def get_structure_replacements():
         "FusedSlice": FuseSliceModule,
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule,
-    }
+        "SingleContinuousGather": ShortCutGatherModule,
+    } 
