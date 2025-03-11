@@ -68,19 +68,21 @@ def fn4(inputs, slice_param, other_tensor):
 
 
 def sumcat_test(xpu_graph_backend, func):
-    slice_723 = torch.randn(128, 32, 32).to("mlu:0").to(torch.float16)
-    slice_param = [(0, 2), (0, 4), (0, 8), (0, 16)]
-    args = (slice_723, slice_param)
-    if func in [fn1, fn2]:
-        other_tensor = torch.randn(128, 32).to("mlu:0").to(torch.float16)
-        args += (other_tensor,)
-    elif func in [fn3, fn4]:
-        other_tensor = torch.randn(128, 32, 32).to("mlu:0").to(torch.float16)
-        args += (other_tensor,)
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
-    res1 = func(*args)
-    res = compiled(*args)
-    assert is_similar(res1.float(), res.float())
+    batch_size_list = [86, 32, 64, 128, 256, 512]
+    for batch in batch_size_list:
+        slice_723 = torch.randn(batch, 32, 32).to("mlu:0").to(torch.float16)
+        slice_param = [(0, 2), (0, 4), (0, 8), (0, 16)]
+        args = (slice_723, slice_param)
+        if func in [fn1, fn2]:
+            other_tensor = torch.randn(batch, 32).to("mlu:0").to(torch.float16)
+            args += (other_tensor,)
+        elif func in [fn3, fn4]:
+            other_tensor = torch.randn(batch, 32, 32).to("mlu:0").to(torch.float16)
+            args += (other_tensor,)
+        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+        res1 = func(*args)
+        res = compiled(*args)
+        assert is_similar(res1.float(), res.float())
 
 
 class TestSliceSumCat:
@@ -96,4 +98,5 @@ class TestSliceSumCat:
 
 
 if __name__ == "__main__":
-    pytest.main()
+    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2)
+    sumcat_test(xpu_graph_backend, fn0)
