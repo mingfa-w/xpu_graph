@@ -41,4 +41,4 @@ jobs:
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/neuware/lib64
           pip install --root-user-action=ignore -e .
           export MLU_VISIBLE_DEVICES=7
-          pytest tests/mlu/test_*
+          pytest --ignore=tests/xpu_ops tests

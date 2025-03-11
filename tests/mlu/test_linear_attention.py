@@ -75,6 +75,6 @@ if __name__ == "__main__":
     config = xpu_graph.config.XpuGraphConfig()
     config.target = xpu_graph.config.Target.mlu
     config.opt_level = OptLevel.level2
-    xpu_graph = xpu_graph.compiler.XpuGraph(config)
-    linear_attention_test(xpu_graph, fn0)
-    linear_attention_test(xpu_graph, fn1)
+    xpu_graph_backend = xpu_graph.compiler.XpuGraph(config)
+    linear_attention_test(xpu_graph_backend, fn0)
+    linear_attention_test(xpu_graph_backend, fn1)
