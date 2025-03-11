@@ -15,23 +15,25 @@ import logging
 
 
 def optimize_graph(gm, sample_inputs, config=None):
+    # Create default config if none provided
+    if config is None:
+        config = XpuGraphConfig(
+            is_training=False,
+            target=Target.mlu,
+            enable_cache=False,
+            opt_level=OptLevel.level2,
+        )
+
+    # Setup logging based on config
+    setup_logger(logging.DEBUG if config.debug else logging.INFO)
+
+    # Create fake inputs for optimization
     fake_mode = FakeTensorMode()
     fake_mode.allow_non_fake_inputs = True
     fake_inputs = [
         fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
         for x in sample_inputs
     ]
-
-    if config is None:
-        config = XpuGraphConfig()
-        config.target = Target.mlu
-        config.enable_cache = False
-        config.opt_level = OptLevel.level2
-
-    if config.debug:
-        setup_logger(logging.DEBUG)
-    else:
-        setup_logger(logging.INFO)
 
     with fake_mode:
         logger.debug(f"before xpu_optimize_graph, graph like:\n {gm.graph}")
@@ -51,15 +53,14 @@ def optimize_graph(gm, sample_inputs, config=None):
 class XpuGraph:
     def __init__(
         self,
-        config: XpuGraphConfig = XpuGraphConfig(),
+        config: XpuGraphConfig,
         cache: XpuGraphCache = None,
     ):
         self._config = config
-        if self._config.debug:
-            setup_logger(logging.DEBUG)
-        else:
-            setup_logger(logging.INFO)
-        if self._config.freeze:
+        # Setup logging based on config
+        setup_logger(logging.DEBUG if self._config.debug else logging.INFO)
+
+        if self._config.freeze and self._config.is_training == False:
             # The configuration in this inductor affects the return value of is_parameter_freezing(),
             # thereby influencing the process of generating the fx_graph in dynamo. The current code
             # in the community is not very clean, and it would be more reasonable to place this
@@ -68,33 +69,36 @@ class XpuGraph:
             torch._inductor.config.freezing = True
 
         self._pass_manager = PassManager(self._config)
-        if config.enable_cache:
-            if cache:
-                self._cache = cache
-            else:
-                self._cache = default_cache()
+        self._cache = (
+            cache
+            if cache and config.enable_cache
+            else default_cache()
+            if config.enable_cache
+            else None
+        )
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, sample_inputs):
             if self._config.skip_all_pass:
                 return gm
 
-            # return gm
+            # Create fake inputs for optimization
             from torch._guards import detect_fake_mode
 
             fake_mode = detect_fake_mode(sample_inputs)
+            fake_mode.allow_non_fake_inputs = True
             fake_inputs = [
                 fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
                 for x in sample_inputs
             ]
-            fake_mode.allow_non_fake_inputs = True
 
             with fake_mode:
                 logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
                 logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
                 logger.info("xpu_graph passes start...")
 
-                if self._config.enable_cache:
+                # Try to load from cache or run pass manager
+                if self._config.enable_cache and self._cache:
                     hashkey = self._cache.cache_key(gm, fake_inputs, self._config)
                     xpu_compiled = self._cache.load_gm(hashkey)
                     if xpu_compiled is None:
@@ -109,6 +113,7 @@ class XpuGraph:
                     f"after xpu_graph, nodes num: {len(xpu_compiled.graph.nodes)}"
                 )
 
+                # Apply vendor compiler if configured
                 if self._config.vendor_compiler_config:
                     from .backends import vendor_compiler
 
@@ -121,24 +126,21 @@ class XpuGraph:
 
             return xpu_compiled
 
+        if self._config.is_training:
+            return aot_autograd(fw_compiler=_compiler)(dynamo_gm, example_inputs)
+
+        logger.info("aot_export_module start...")
+        exported_gm, gs = aot_export_module(
+            dynamo_gm, example_inputs, trace_joint=False
+        )
+        logger.debug(f"before aot_export_module, graph like:\n {exported_gm.graph}")
         if self._config.freeze:
-            logger.info("unlift graph start...")
-            lifted_gm, gs = aot_export_module(
-                dynamo_gm, example_inputs, trace_joint=False
-            )
-
-            logger.debug(f"before unlift, graph like:\n {lifted_gm.graph}")
-
             from xpu_graph.fx_utils import unlift_gm
 
-            unlifted_gm = unlift_gm(dynamo_gm, lifted_gm, gs)
+            exported_gm = unlift_gm(dynamo_gm, exported_gm, gs)
             logger.info("unlift graph complete")
-            logger.debug(f"after unlift, graph like:\n {unlifted_gm.graph}")
-
-            return _compiler(unlifted_gm, example_inputs)
-        else:
-            xpu_gm = aot_autograd(fw_compiler=_compiler)(dynamo_gm, example_inputs)
-            return xpu_gm
+            logger.debug(f"after unlift, graph like:\n {exported_gm.graph}")
+        return _compiler(exported_gm, example_inputs)
 
     def get_pattern_manager(self):
         return self._pass_manager.get_pattern_manager()

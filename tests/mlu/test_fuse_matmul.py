@@ -139,7 +139,9 @@ def matmul_test(xpu_graph_backend, func):
 
 class TestMatMul:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            is_training=False, opt_level=OptLevel.level2
+        )
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -171,7 +173,9 @@ class TestMatMul:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2)
+    xpu_graph_backend = xpu_graph.mlu_compiler(
+        is_training=False, opt_level=OptLevel.level2
+    )
     matmul_test(xpu_graph_backend, fn16)
     matmul_test(xpu_graph_backend, fn17)
     matmul_test(xpu_graph_backend, fn18)

@@ -55,7 +55,7 @@ def linear_attention_test(xpu_graph, func):
 
 class TestLinearAttention:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig()
+        config = xpu_graph.config.XpuGraphConfig(is_training=False)
         config.target = xpu_graph.config.Target.mlu
         config.vendor_compiler = {"mode": "reduce-overhead"}
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
@@ -72,7 +72,7 @@ class TestLinearAttention:
 
 
 if __name__ == "__main__":
-    config = xpu_graph.config.XpuGraphConfig()
+    config = xpu_graph.config.XpuGraphConfig(is_training=False)
     config.target = xpu_graph.config.Target.mlu
     config.opt_level = OptLevel.level2
     xpu_graph_backend = xpu_graph.compiler.XpuGraph(config)
