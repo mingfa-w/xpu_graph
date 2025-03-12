@@ -29,6 +29,7 @@ def fn1(inputs, residual, weight, bias):
     )
     return output, inputs_
 
+
 def fn2(inputs, residual, weight, bias):
     residual = residual.to(torch.float32)
     weight = weight.to(torch.float32)
@@ -39,6 +40,7 @@ def fn2(inputs, residual, weight, bias):
         inputs_, normalized_shape=[1024], weight=weight, bias=bias, eps=1e-5
     )
     return output
+
 
 def layernorm_test(xpu_graph, func):
     inputs = torch.randn((8, 1024), device=device, dtype=data_type)
@@ -60,7 +62,7 @@ def layernorm_test(xpu_graph, func):
 class TestLayerNorm:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            freeze=True, opt_level=OptLevel.level2
+            is_training=False, freeze=True, opt_level=OptLevel.level2
         )
 
     @pytest.mark.parametrize(
@@ -72,7 +74,9 @@ class TestLayerNorm:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2)
+    xpu_graph_backend = xpu_graph.mlu_compiler(
+        is_training=False, opt_level=OptLevel.level2
+    )
     layernorm_test(xpu_graph_backend, fn0)
     layernorm_test(xpu_graph_backend, fn1)
     layernorm_test(xpu_graph_backend, fn2)

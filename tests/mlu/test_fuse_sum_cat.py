@@ -88,7 +88,7 @@ def sumcat_test(xpu_graph, func):
 
 class TestSumCat:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig()
+        config = xpu_graph.config.XpuGraphConfig(is_training=False)
         config.target = xpu_graph.config.Target.mlu
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
 
