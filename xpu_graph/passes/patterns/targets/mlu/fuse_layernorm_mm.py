@@ -9,7 +9,8 @@ from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
 from ...utils.check_ops import (
-    check_copy,
+    check_getitem_op,
+    check_norm_op,
 )
 
 class FusedLayernormMMReplacement(nn.Module):
@@ -57,18 +58,19 @@ def _is_layernorm_mm(
     if node.target != "mlu_tmo_fused_matmul_1_replacement" and \
        node.target != "mlu_tmo_fused_matmul_2_replacement":
         return False, ()
-    _to_copy_node = node.args[0]
-    if not check_copy(_to_copy_node):
+    getitem_node = node.args[0]
+    if not check_getitem_op(getitem_node):
         return False, ()
 
-    layernorm_node = _to_copy_node.args[0]
-    if layernorm_node.target != "layer_norm_op":
+    layernorm_node = getitem_node.args[0]
+    is_norm, mode = check_norm_op(layernorm_node)
+    if not is_norm or mode != "layer_norm":
         return False, ()
 
     inputs = layernorm_node.args[0]
-    norm_weight = layernorm_node.args[1]
-    norm_bias = layernorm_node.args[2]
-    eps = layernorm_node.args[3]
+    norm_weight = layernorm_node.args[2]
+    norm_bias = layernorm_node.args[3]
+    eps = layernorm_node.args[4]
 
     input_shape = node.args[1]
     q_weight = node.args[2]
