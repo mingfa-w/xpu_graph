@@ -42,6 +42,12 @@ class PassManager:
             from torch.fx.passes.shape_prop import ShapeProp
 
             ShapeProp(gm).propagate(*example_inputs)
+
+            from torch.fx.passes.fake_tensor_prop import FakeTensorProp
+            from torch._guards import active_fake_mode
+
+            FakeTensorProp(gm, active_fake_mode()).propagate(*example_inputs)
+
             changed = False
             for pass_ in self._passes:
                 changed = changed or pass_(gm)
