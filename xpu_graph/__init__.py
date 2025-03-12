@@ -20,7 +20,7 @@ def mlu_compiler(
     freeze: bool = True,
     opt_level: OptLevel = OptLevel.level1,
     constant_folding: bool = True,
-    cache: Optional[XpuGraphCache] = no_cache(),
+    cache: Optional[XpuGraphCache] = None,
     debug: bool = False,
     vendor_compiler_config: Dict[str, Any] = {"mode": "reduce-overhead"},
 ) -> XpuGraph:
