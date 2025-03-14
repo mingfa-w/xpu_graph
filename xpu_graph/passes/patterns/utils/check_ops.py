@@ -70,6 +70,9 @@ def check_mul_op(node: fx.Node) -> bool:
     return check_op(node, torch.ops.aten.mul.Tensor)
 
 
+def check_gather_op(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten.gather.default)
+
 def check_meta(node: fx.Node) -> bool:
     if node.meta == {}:
         return False
