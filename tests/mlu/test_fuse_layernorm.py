@@ -67,7 +67,7 @@ class TestLayerNorm:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn0, fn2],
+        [fn0, fn1, fn2],
     )
     def test_layernrom_patterns(self, pattern_func):
         layernorm_test(self.xpu_graph_backend, pattern_func)

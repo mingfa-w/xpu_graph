@@ -9,6 +9,14 @@ from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_mak
 from torch.fx.proxy import Proxy, GraphAppendingTracer
 
 from typing import Union, Callable
+from enum import Enum
+
+
+class FxStage(Enum):
+    inference = "inference"
+    pregrad = "pregrad"
+    forward = "forward"
+    backward = "backward"
 
 
 def unlift_gm(mod, gm, graph_signature):
@@ -74,6 +82,7 @@ def unlift_gm(mod, gm, graph_signature):
 
 
 def trace_and_inline(
+    predispatch: bool,
     graph_module: torch.fx.GraphModule,
     mod_or_func: Union[str, Callable],
 ):
@@ -89,9 +98,12 @@ def trace_and_inline(
 
         # use the original (fake) tensor to avoid dynamic-control-flow issues
         f_arglist = list(map_arg(arglist, lambda arg: arg.meta["val"]))
-        traced = make_fx(wrapped, record_module_stack=True, tracing_mode="fake")(
-            f_arglist
-        )
+        traced = make_fx(
+            wrapped,
+            pre_dispatch=predispatch,
+            record_module_stack=True,
+            tracing_mode="fake",
+        )(f_arglist)
         traced.recompile()
 
         tracer = GraphAppendingTracer(graph_module.graph)

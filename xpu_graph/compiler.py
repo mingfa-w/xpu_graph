@@ -11,7 +11,9 @@ from .passes.patterns.pattern import Pattern
 from .config import XpuGraphConfig, Target, OptLevel
 from .utils import logger, setup_logger
 from .cache import XpuGraphCache, default_cache
+from .fx_utils import FxStage
 import logging
+from functools import partial
 
 
 def optimize_graph(gm, sample_inputs, config=None):
@@ -19,7 +21,7 @@ def optimize_graph(gm, sample_inputs, config=None):
     if config is None:
         config = XpuGraphConfig(
             is_training=False,
-            target=Target.mlu,
+            target=Target.none,
             enable_cache=False,
             opt_level=OptLevel.level2,
         )
@@ -40,7 +42,7 @@ def optimize_graph(gm, sample_inputs, config=None):
         logger.info(f"before xpu_optimize_graph, nodes num: {len(gm.graph.nodes)}")
 
         pass_manager = PassManager(config)
-        xpu_optimized = pass_manager(gm, fake_inputs)
+        xpu_optimized = pass_manager(gm, fake_inputs, stage=FxStage.inference)
 
         logger.debug(f"after xpu_optimize_graph, graph like:\n {xpu_optimized.graph}")
         logger.info(
@@ -72,13 +74,11 @@ class XpuGraph:
         self._cache = (
             cache
             if cache and config.enable_cache
-            else default_cache()
-            if config.enable_cache
-            else None
+            else default_cache() if config.enable_cache else None
         )
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
-        def _compiler(gm, sample_inputs):
+        def _compiler(gm, sample_inputs, stage: FxStage):
             if self._config.skip_all_pass:
                 return gm
 
@@ -95,17 +95,18 @@ class XpuGraph:
             with fake_mode:
                 logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
                 logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
-                logger.info("xpu_graph passes start...")
+                logger.info(f"xpu_graph passes start {stage}...")
 
-                # Try to load from cache or run pass manager
-                if self._config.enable_cache and self._cache:
-                    hashkey = self._cache.cache_key(gm, fake_inputs, self._config)
+                if self._config.enable_cache:
+                    hashkey = self._cache.cache_key(
+                        gm, fake_inputs, self._config, stage
+                    )
                     xpu_compiled = self._cache.load_gm(hashkey)
                     if xpu_compiled is None:
-                        xpu_compiled = self._pass_manager(gm, fake_inputs)
+                        xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
                         xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
                 else:
-                    xpu_compiled = self._pass_manager(gm, fake_inputs)
+                    xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
 
                 logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                 logger.info("xpu_graph passes complete")
@@ -113,8 +114,11 @@ class XpuGraph:
                     f"after xpu_graph, nodes num: {len(xpu_compiled.graph.nodes)}"
                 )
 
-                # Apply vendor compiler if configured
+                if stage == FxStage.pregrad:
+                    return xpu_compiled
+
                 if self._config.vendor_compiler_config:
+
                     from .backends import vendor_compiler
 
                     return vendor_compiler(
@@ -127,20 +131,42 @@ class XpuGraph:
             return xpu_compiled
 
         if self._config.is_training:
-            return aot_autograd(fw_compiler=_compiler)(dynamo_gm, example_inputs)
+            logger.debug(f"before dispatch: graph like:\n {dynamo_gm.graph}")
+            logger.info("dispatch graph start...")
+            from torch.fx.experimental.proxy_tensor import make_fx
 
-        logger.info("aot_export_module start...")
-        exported_gm, gs = aot_export_module(
-            dynamo_gm, example_inputs, trace_joint=False
-        )
-        logger.debug(f"before aot_export_module, graph like:\n {exported_gm.graph}")
-        if self._config.freeze:
-            from xpu_graph.fx_utils import unlift_gm
+            dispatched_gm = make_fx(
+                dynamo_gm,
+                tracing_mode="fake",
+                pre_dispatch=True,
+                record_module_stack=True,
+            )(*example_inputs)
+            logger.info("dispatch graph complete")
+            logger.debug(f"after dispatch, graph like:\n {dispatched_gm.graph}")
 
-            exported_gm = unlift_gm(dynamo_gm, exported_gm, gs)
-            logger.info("unlift graph complete")
-            logger.debug(f"after unlift, graph like:\n {exported_gm.graph}")
-        return _compiler(exported_gm, example_inputs)
+            # Since: 1. dynamo has eliminated control-flow for input GraphModule
+            #    and 2. aot_autograd traces grad again
+            # It's okay use optimized infer-graph for training as well
+            pregrad_gm = _compiler(dispatched_gm, example_inputs, stage=FxStage.pregrad)
+
+            xpu_gm = aot_autograd(
+                fw_compiler=partial(_compiler, stage=FxStage.forward),
+                bw_compiler=partial(_compiler, stage=FxStage.backward),
+            )(pregrad_gm, example_inputs)
+        else:
+            logger.info("aot_export_module start...")
+            exported_gm, gs = aot_export_module(
+                dynamo_gm, example_inputs, trace_joint=False
+            )
+            logger.debug(f"before aot_export_module, graph like:\n {exported_gm.graph}")
+            if self._config.freeze:
+                from xpu_graph.fx_utils import unlift_gm
+
+                exported_gm = unlift_gm(dynamo_gm, exported_gm, gs)
+                logger.info("unlift graph complete")
+                logger.debug(f"after unlift, graph like:\n {exported_gm.graph}")
+            xpu_gm = _compiler(exported_gm, example_inputs, stage=FxStage.inference)
+        return xpu_gm
 
     def get_pattern_manager(self):
         return self._pass_manager.get_pattern_manager()

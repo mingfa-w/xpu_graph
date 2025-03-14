@@ -9,6 +9,7 @@ from enum import Enum
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.utils import logger
+from xpu_graph.fx_utils import FxStage
 
 
 class PatternGroup(Enum):
@@ -25,9 +26,11 @@ class PatternGroup(Enum):
 class Pattern(Optimizer):
     _opt_level = OptLevel.level0
     _pattern_group = PatternGroup.GROUP0
+    _stages = [FxStage.inference]
 
-    def __init__(self):
+    def __init__(self, stage: FxStage):
         super().__init__()
+        self._stage = stage
 
     def process(self, gm: fx.GraphModule):
         raise NotImplementedError
@@ -62,8 +65,8 @@ class AutoMatchPattern(Pattern):
     )
     _mermaid_re2 = re.compile(r"^\s*(\w+)([\[\(\{][\w\./]+[\]\)\}]){0,1}\s*$")
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, stage: FxStage):
+        super().__init__(stage)
 
         self._rule_map = {}
 

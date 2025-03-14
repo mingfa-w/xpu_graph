@@ -61,27 +61,87 @@ def layernorm_test(xpu_graph, func):
         assert is_similar(norm1, norm)
 
 
+def layernorm_test_with_loss_and_grad(xpu_graph, func):
+    inputs = torch.randn(
+        (
+            8,
+            1024,
+        ),
+        device=device,
+        dtype=data_type,
+    )
+    weight = torch.randn((1024,), device=device, dtype=data_type)
+    bias = torch.randn((1024,), device=device, dtype=data_type)
+    ref = torch.randn((8, 1024), device=device, dtype=data_type)
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+
+    inputs0, weight0, bias0 = (
+        inputs.clone().requires_grad_(),
+        weight.clone().requires_grad_(),
+        bias.clone().requires_grad_(),
+    )
+    norm0 = compiled(inputs0, weight0, bias0)
+    loss0 = F.mse_loss(norm0, ref)
+    loss0.backward()
+
+    inputs1, weight1, bias1 = (
+        inputs.clone().requires_grad_(),
+        weight.clone().requires_grad_(),
+        bias.clone().requires_grad_(),
+    )
+    norm1 = func(inputs1, weight1, bias1)
+    loss1 = F.mse_loss(norm1, ref)
+    loss1.backward()
+
+    assert is_similar(norm0.detach(), norm1.detach())
+    assert is_similar(loss0.detach(), loss1.detach())
+
+    assert is_similar(inputs0.grad, inputs1.grad)
+
+    assert maybe_similar(weight0.grad, weight1.grad)
+    assert maybe_similar(bias0.grad, bias1.grad)
+
+
 class TestLayerNorm:
     def setup_class(self):
-        config = xpu_graph.XpuGraphConfig(
-            is_training=False, opt_level=OptLevel.level2, freeze=False
+        infer_config = xpu_graph.XpuGraphConfig(
+            is_training=False, opt_level=OptLevel.level2
         )
-        self.xpu_graph_backend = xpu_graph.XpuGraph(config)
+        self.infer_backend = xpu_graph.XpuGraph(infer_config)
+        train_config = xpu_graph.XpuGraphConfig(
+            is_training=True, opt_level=OptLevel.level2
+        )
+        self.train_backend = xpu_graph.XpuGraph(train_config)
 
     @pytest.mark.parametrize(
         "pattern_func",
         [fn0, fn1, fn2, fn3],
     )
     def test_layernrom_patterns(self, pattern_func):
-        layernorm_test(self.xpu_graph_backend, pattern_func)
+        layernorm_test(self.infer_backend, pattern_func)
+
+    @pytest.mark.parametrize(
+        "pattern_func",
+        [fn2, fn3],
+    )
+    def test_layernrom_patterns_with_loss_and_grad(self, pattern_func):
+        layernorm_test_with_loss_and_grad(self.train_backend, pattern_func)
 
 
 if __name__ == "__main__":
-    config = xpu_graph.XpuGraphConfig(
-        is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True
+    infer_config = xpu_graph.XpuGraphConfig(
+        is_training=False, opt_level=OptLevel.level2, debug=True
     )
-    xpu_graph_backend = xpu_graph.XpuGraph(config)
-    layernorm_test(xpu_graph_backend, fn0)
-    layernorm_test(xpu_graph_backend, fn1)
-    layernorm_test(xpu_graph_backend, fn2)
-    layernorm_test(xpu_graph_backend, fn3)
+    infer_backend = xpu_graph.XpuGraph(infer_config)
+    layernorm_test(infer_backend, fn0)
+    layernorm_test(infer_backend, fn1)
+    layernorm_test(infer_backend, fn2)
+    layernorm_test(infer_backend, fn3)
+    train_config = xpu_graph.XpuGraphConfig(
+        is_training=True, opt_level=OptLevel.level2, debug=True
+        )
+    train_backend = xpu_graph.XpuGraph(train_config)
+    layernorm_test_with_loss_and_grad(train_backend, fn0)
+    layernorm_test_with_loss_and_grad(train_backend, fn1)
+    layernorm_test_with_loss_and_grad(train_backend, fn2)
+    layernorm_test_with_loss_and_grad(train_backend, fn3)
