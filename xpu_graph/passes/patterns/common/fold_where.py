@@ -3,8 +3,10 @@ import torch.fx as fx
 
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.expand_tensor import expand_tensor
+from xpu_graph.fx_utils import trace_and_inline, FxStage
 
 class FoldWhere(Pattern):
+    _stages = [FxStage.inference, FxStage.pregrad]
     def process(self, gm: fx.GraphModule):
         changed = False
         candidates = [node for node in gm.graph.nodes if node.op == 'call_function' and node.target == torch.ops.aten.where.self]

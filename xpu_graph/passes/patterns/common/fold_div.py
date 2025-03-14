@@ -2,13 +2,13 @@ import torch
 import torch.fx as fx
 
 from xpu_graph.passes.patterns.pattern import Pattern
-
+from xpu_graph.fx_utils import trace_and_inline, FxStage
 
 class FoldDiv1(Pattern):
     """
     Fold aten.div(x, one_like) -> x
     """
-
+    _stages = [FxStage.inference, FxStage.pregrad]
     def process(self, gm: fx.GraphModule):
         changed = False
         div_tup = (torch.ops.aten.div.Tensor, torch.ops.aten.div.Scalar)

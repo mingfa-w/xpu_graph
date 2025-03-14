@@ -2,11 +2,13 @@ import torch
 import torch.fx as fx
 
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.fx_utils import trace_and_inline, FxStage
 
 MAX_INT64 = 9223372036854775807
 
 
 class FoldSlice(Pattern):
+    _stages = [FxStage.inference, FxStage.pregrad]
     def process(self, gm: fx.GraphModule):
         changed = False
         candidates = [

@@ -3,9 +3,10 @@ import torch.fx as fx
 
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.check_ops import check_cat_op
-
+from xpu_graph.fx_utils import trace_and_inline, FxStage
 
 class FoldCat(Pattern):
+    _stages = [FxStage.inference, FxStage.pregrad]
     def process(self, gm: fx.GraphModule):
         changed = False
         candidates = [

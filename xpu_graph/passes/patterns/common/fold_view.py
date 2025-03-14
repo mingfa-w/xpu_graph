@@ -2,11 +2,13 @@ import torch
 import torch.fx as fx
 
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.fx_utils import trace_and_inline, FxStage
 
 class FoldView0(Pattern):
     '''
     Fold aten.view which inp.shape == target_shape
     '''
+    _stages = [FxStage.inference, FxStage.pregrad]
     def process(self, gm: fx.GraphModule):
         changed = False
         view_tup = (torch.ops.aten.view.default, torch.ops.aten._unsafe_view.default,)
@@ -30,6 +32,7 @@ class FoldView1(Pattern):
     '''
     Fold aten.view(aten.view) -> aten.view
     '''
+    _stages = [FxStage.inference, FxStage.pregrad]
     def process(self, gm: fx.GraphModule):
         changed = False
         view_tup = (torch.ops.aten.view.default, torch.ops.aten._unsafe_view.default,)

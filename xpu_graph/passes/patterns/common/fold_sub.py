@@ -2,13 +2,14 @@ import torch
 import torch.fx as fx
 
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.fx_utils import trace_and_inline, FxStage
 
 
 class FoldSub0(Pattern):
     """
     Fold aten.sub(x, zero_like) -> x
     """
-
+    _stages = [FxStage.inference, FxStage.pregrad]
     def process(self, gm: fx.GraphModule):
         changed = False
         sub_tup = (torch.ops.aten.sub.Tensor, torch.ops.aten.sub.Scalar)
