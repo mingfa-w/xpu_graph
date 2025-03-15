@@ -53,21 +53,61 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
         if len(input_tensor.shape) != 2:
             raise NotImplementedError("input must be 2d")
         
-        elements = 0    
-        for start,end in slices:
+        elements = 0
+        rows, _ = input_tensor.shape
+        count = {}
+        in_offs_ptrs={}
+        out_offs_ptrs={}
+        position=0 
+
+        for i, (start, end) in enumerate(slices):
             length = end - start
             elements += length
-            elements = sum(end-start for start,end in slices)
-        import itertools
-        plain_slices = list(itertools.chain(*slices))
+            if length in count:
+                count[length]+=1
+                in_offs_ptrs[length].append(start)
+                out_offs_ptrs[length].append(position)
+            else:
+                assert length < 20000 and "slice length greater than UB !"
+                count[length]=1
+                in_offs_ptrs[length]=[start]
+                out_offs_ptrs[length]=[position]
+            position+=length
 
-        rows, _ = input_tensor.shape
+        assert len(count) < 7 and "too much category of length"
+
+        in_offs_ptr=[None]*6
+        out_offs_ptr=[None]*6
+        cnt = [0]*6
+        sz = [0]*6
+        for i,(l,c) in enumerate(count.items()):
+            in_offs_ptr[i]=torch.tensor(in_offs_ptrs[l],dtype=torch.int32,device='npu')
+            out_offs_ptr[i]=torch.tensor(out_offs_ptrs[l],dtype=torch.int32,device='npu')
+            cnt[i]=c
+            sz[i]=l
+
         return torch.ops.torch_npu_triton.fused_slice_cat(
-            input_tensor,
-            plain_slices, 
-            elements,
-            rows,
-            input_tensor.stride(0),
+            input_tensor,rows,
+            in_offs_ptr[0],out_offs_ptr[0],
+            in_offs_ptr[1],out_offs_ptr[1],
+            in_offs_ptr[2],out_offs_ptr[2],
+            in_offs_ptr[3],out_offs_ptr[3],
+            in_offs_ptr[4],out_offs_ptr[4],
+            in_offs_ptr[5],out_offs_ptr[5],
+            stride=input_tensor.stride(0),
+            output_xnumel=elements,
+            cnt_1=cnt[0],
+            cnt_4=cnt[1],
+            cnt_8=cnt[2],
+            cnt_16=cnt[3],
+            cnt_32=cnt[4],
+            cnt_64=cnt[5],
+            sz_1=sz[0],
+            sz_4=sz[1],
+            sz_8=sz[2],
+            sz_16=sz[3],
+            sz_32=sz[4],
+            sz_64=sz[5],
         )
         
 class ShortCutGatherModule(torch.nn.Module):
