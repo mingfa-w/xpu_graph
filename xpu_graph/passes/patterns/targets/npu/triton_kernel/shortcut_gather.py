@@ -5,11 +5,21 @@ import triton.language as tl
 from typing import List
 
 @triton.jit
-def npu_shortcut_gather(in_ptr, out_ptr, PBLOCK: tl.constexpr, xnumel: tl.constexpr):
-    offset = tl.program_id(0) * PBLOCK * xnumel
-    idx = tl.arange(0, PBLOCK * xnumel)
-    tmp = tl.load(in_ptr + offset + idx)
-    tl.store(out_ptr + offset + idx,tmp)
+def npu_shortcut_gather_dim1_prefix(in_ptr, out_ptr, pnumel: tl.constexpr, xnumel: tl.constexpr, rnumel: tl.constexpr, PBLOCK: tl.constexpr, XBLOCK: tl.constexpr):
+    poffset = tl.program_id(0) * PBLOCK
+    pidx = tl.arange(0, PBLOCK)[:,None,None] + poffset
+    xidx = tl.arange(0, XBLOCK)[None,:,None]
+    ridx = tl.arange(0, rnumel)[None,None,:]
+    
+    pmask = pidx<pnumel
+    base_mask = tl.full((PBLOCK,XBLOCK,rnumel),True,tl.int1)
+    mask = pmask&base_mask
+
+    idx = pidx * xnumel * rnumel + xidx * rnumel + ridx
+
+    tmp = tl.load(in_ptr + idx, mask)
+    oidx = pidx * XBLOCK * rnumel + xidx * rnumel + ridx
+    tl.store(out_ptr + oidx, tmp, mask)
 
 from torch.library import Library, impl
 from xpu_graph.passes.patterns.targets.npu.triton_kernel import npu_def, npu_lib, npu_meta
@@ -36,15 +46,19 @@ def shortcut_gather(
     grid = ((num_batch - 1) // pblock + 1, 1, 1)
 
     output_tensor = get_empty_result_tensor(input_tensor, dim, prefix_len)
-
-    xblock = output_tensor.numel() // num_batch
-
+    
+    if not (dim == 1): 
+        assert (0 and "continuous gather pattern not supported other dim yet")
+    
     if not (type(input_tensor) is torch._subclasses.fake_tensor.FakeTensor):
-        npu_shortcut_gather[grid](
+        npu_shortcut_gather_dim1_prefix[grid](
             input_tensor,
             output_tensor,
+            pnumel = input_tensor.shape[0],
+            xnumel = input_tensor.shape[1],
+            rnumel = input_tensor.shape[2],
             PBLOCK = pblock,
-            xnumel = xblock,
+            XBLOCK = prefix_len,
         )
 
     return output_tensor
