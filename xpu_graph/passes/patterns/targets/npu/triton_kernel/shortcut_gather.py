@@ -5,7 +5,7 @@ import triton.language as tl
 from typing import List
 
 @triton.jit
-def npu_shortcut_gather_dim1_prefix(in_ptr, out_ptr, pnumel: tl.constexpr, xnumel: tl.constexpr, rnumel: tl.constexpr, PBLOCK: tl.constexpr, XBLOCK: tl.constexpr):
+def npu_shortcut_gather_3D_dim1_prefix(in_ptr, out_ptr, pnumel: tl.constexpr, xnumel: tl.constexpr, rnumel: tl.constexpr, PBLOCK: tl.constexpr, XBLOCK: tl.constexpr):
     poffset = tl.program_id(0) * PBLOCK
     pidx = tl.arange(0, PBLOCK)[:,None,None] + poffset
     xidx = tl.arange(0, XBLOCK)[None,:,None]
@@ -19,6 +19,22 @@ def npu_shortcut_gather_dim1_prefix(in_ptr, out_ptr, pnumel: tl.constexpr, xnume
 
     tmp = tl.load(in_ptr + idx, mask)
     oidx = pidx * XBLOCK * rnumel + xidx * rnumel + ridx
+    tl.store(out_ptr + oidx, tmp, mask)
+
+@triton.jit
+def npu_shortcut_gather_2D_dim1_prefix(in_ptr, out_ptr, pnumel: tl.constexpr, xnumel: tl.constexpr, PBLOCK: tl.constexpr, XBLOCK: tl.constexpr):
+    poffset = tl.program_id(0) * PBLOCK
+    pidx = tl.arange(0, PBLOCK)[:,None] + poffset
+    xidx = tl.arange(0, XBLOCK)[None,:]
+    
+    pmask = pidx<pnumel
+    base_mask = tl.full((PBLOCK,XBLOCK),True,tl.int1)
+    mask = pmask&base_mask
+
+    idx = pidx * xnumel + xidx
+
+    tmp = tl.load(in_ptr + idx, mask)
+    oidx = pidx * XBLOCK + xidx
     tl.store(out_ptr + oidx, tmp, mask)
 
 from torch.library import Library, impl
@@ -51,15 +67,25 @@ def shortcut_gather(
         assert (0 and "continuous gather pattern not supported other dim yet")
     
     if not (type(input_tensor) is torch._subclasses.fake_tensor.FakeTensor):
-        npu_shortcut_gather_dim1_prefix[grid](
-            input_tensor,
-            output_tensor,
-            pnumel = input_tensor.shape[0],
-            xnumel = input_tensor.shape[1],
-            rnumel = input_tensor.shape[2],
-            PBLOCK = pblock,
-            XBLOCK = prefix_len,
-        )
+        if len(input_tensor.shape) == 3:
+            npu_shortcut_gather_3D_dim1_prefix[grid](
+                input_tensor,
+                output_tensor,
+                pnumel = input_tensor.shape[0],
+                xnumel = input_tensor.shape[1],
+                rnumel = input_tensor.shape[2],
+                PBLOCK = pblock,
+                XBLOCK = prefix_len,
+            )
+        else:
+            npu_shortcut_gather_2D_dim1_prefix[grid](
+                input_tensor,
+                output_tensor,
+                pnumel = input_tensor.shape[0],
+                xnumel = input_tensor.shape[1],
+                PBLOCK = pblock,
+                XBLOCK = prefix_len,
+            )
 
     return output_tensor
 
