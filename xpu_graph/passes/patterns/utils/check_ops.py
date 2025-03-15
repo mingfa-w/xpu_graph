@@ -179,8 +179,8 @@ def check_bmm_op(
 def check_mm_op(
     node: fx.Node,
 ) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
-    if check_op(node, torch.ops.aten.mm.default) or check_op(
-        node, torch.ops.aten.matmul.default
+    if check_op(node, torch.ops.aten.mm.default) or (
+        check_op(node, torch.ops.aten.matmul.default) and check_meta_2d(node)
     ):
         arg1 = node.args[0]
         arg2 = node.args[1]
