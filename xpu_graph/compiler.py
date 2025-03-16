@@ -97,6 +97,20 @@ class XpuGraph:
                 logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
                 logger.info(f"xpu_graph passes start {stage}...")
 
+                if stage == FxStage.pregrad:
+                    logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
+                    logger.info("decompose graph start...")
+                    from torch.fx.experimental.proxy_tensor import make_fx
+
+                    gm = make_fx(
+                        gm,
+                        tracing_mode="fake",
+                        pre_dispatch=True,
+                        record_module_stack=True,
+                    )(*fake_inputs)
+                    logger.info("decompose graph complete")
+                    logger.debug(f"after dispatch, graph like:\n {gm.graph}")
+
                 if self._config.enable_cache:
                     hashkey = self._cache.cache_key(
                         gm, fake_inputs, self._config, stage
@@ -131,23 +145,10 @@ class XpuGraph:
             return xpu_compiled
 
         if self._config.is_training:
-            logger.debug(f"before dispatch: graph like:\n {dynamo_gm.graph}")
-            logger.info("dispatch graph start...")
-            from torch.fx.experimental.proxy_tensor import make_fx
-
-            dispatched_gm = make_fx(
-                dynamo_gm,
-                tracing_mode="fake",
-                pre_dispatch=True,
-                record_module_stack=True,
-            )(*example_inputs)
-            logger.info("dispatch graph complete")
-            logger.debug(f"after dispatch, graph like:\n {dispatched_gm.graph}")
-
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
             #    and 2. aot_autograd traces grad again
             # It's okay use optimized infer-graph for training as well
-            pregrad_gm = _compiler(dispatched_gm, example_inputs, stage=FxStage.pregrad)
+            pregrad_gm = _compiler(dynamo_gm, example_inputs, stage=FxStage.pregrad)
 
             xpu_gm = aot_autograd(
                 fw_compiler=partial(_compiler, stage=FxStage.forward),
