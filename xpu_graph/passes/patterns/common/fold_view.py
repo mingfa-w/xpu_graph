@@ -33,13 +33,14 @@ class FoldView1(Pattern):
     def process(self, gm: fx.GraphModule):
         changed = False
         view_tup = (torch.ops.aten.view.default, torch.ops.aten._unsafe_view.default,)
+        pattern_tup = (torch.ops.aten.view.default, torch.ops.aten._unsafe_view.default, torch.ops.aten.squeeze.default, torch.ops.aten.unsqueeze.default)
         candidates = [node for node in gm.graph.nodes if node.op == 'call_function' and node.target in view_tup]
 
         for view in candidates:
             inp = view.args[0]
             if isinstance(inp, fx.Node) and \
                 inp.op == 'call_function' and \
-                inp.target in view_tup:
+                inp.target in pattern_tup:
                 changed = True
                 view.replace_input_with(inp, inp.args[0])
 
