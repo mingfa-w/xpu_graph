@@ -9,11 +9,12 @@ from xpu_graph.test_utils import is_similar
 import pytest
 from xpu_graph.test_utils import assertTensorsEqual
 
-torch._inductor.config.comprehensive_padding=False
+torch._inductor.config.comprehensive_padding = False
 
 device = "mlu:0"
 data_type = torch.float16
 aten = torch.ops.aten
+
 
 def fn0(inputs, weight, bias, scale, q_weight, q_bias):
     inputs = inputs * scale
@@ -27,6 +28,7 @@ def fn0(inputs, weight, bias, scale, q_weight, q_bias):
     mm = torch.matmul(outputs, q_weight)
     return mm
 
+
 def fn1(inputs, weight, bias, scale, q_weight, q_bias):
     inputs = inputs * scale
     origin_dtype = inputs.dtype
@@ -39,6 +41,7 @@ def fn1(inputs, weight, bias, scale, q_weight, q_bias):
     mm = torch.matmul(outputs, q_weight) + q_bias
     return mm
 
+
 def fn2(inputs, weight, bias, scale, q_weight, q_bias):
     inputs = inputs * scale
     origin_dtype = inputs.dtype
@@ -50,6 +53,7 @@ def fn2(inputs, weight, bias, scale, q_weight, q_bias):
     outputs = outputs.to(dtype=origin_dtype)
     mm = torch.matmul(outputs, q_weight) + q_bias
     return mm
+
 
 def layernorm_test(xpu_graph, func):
     inputs = torch.randn((64, 1362), device=device, dtype=data_type)
@@ -105,4 +109,4 @@ if __name__ == "__main__":
     )
     layernorm_test(xpu_graph_backend, fn0)
     layernorm_test(xpu_graph_backend, fn1)
-    #layernorm_test(xpu_graph_backend, fn2)
+    # layernorm_test(xpu_graph_backend, fn2)
