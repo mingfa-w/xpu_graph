@@ -36,14 +36,14 @@ def gather_test(xpu_graph_backend, func):
 class TestGather:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, debug=True, opt_level=OptLevel.level1
+            is_training=False, debug=True, opt_level=OptLevel.level2
         )
 
     @pytest.mark.parametrize(
         "pattern_func",
         [fn0],
     )
-    def test_gather_patterns(self, caplog, pattern_func):
+    def test_sfdp_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             gather_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedGatherToCopy changed graph" in caplog.text
@@ -51,6 +51,6 @@ class TestGather:
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, debug=True, opt_level=OptLevel.level1
+        is_training=False, debug=True, opt_level=OptLevel.level2
     )
     gather_test(xpu_graph_backend, fn0)

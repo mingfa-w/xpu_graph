@@ -7,6 +7,12 @@ import xpu_graph
 from xpu_graph.test_utils import is_similar
 
 import torch_mlu_ops as ops
+from xpu_graph.config import OptLevel
+from xpu_graph.test_utils import (
+    assertTensorsEqual,
+    need_xpu_graph_logs,
+    skip_xpu_graph_cache,
+)
 
 
 aten = torch.ops.aten
@@ -125,18 +131,20 @@ def ffn_test(xpu_graph_backend, func):
 
 class TestFFN:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, freeze=True, opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
         "pattern_func",
         [fn0, fn1, fn2, fn3],
     )
-    def test_slice_patterns(self, pattern_func):
-        ffn_test(self.xpu_graph_backend, pattern_func)
+    def test_sfdp_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            ffn_test(self.xpu_graph_backend, pattern_func)
+        assert "Pattern.FusedFFN changed graph" in caplog.text   
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler()
+    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, freeze=True, opt_level=OptLevel.level2)
     ffn_test(xpu_graph_backend, fn0)
     ffn_test(xpu_graph_backend, fn1)
     ffn_test(xpu_graph_backend, fn2)

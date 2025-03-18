@@ -6,6 +6,11 @@ import xpu_graph
 
 from xpu_graph import OptLevel
 from xpu_graph.test_utils import is_similar
+from xpu_graph.test_utils import (
+    assertTensorsEqual,
+    need_xpu_graph_logs,
+    skip_xpu_graph_cache,
+)
 
 device = "mlu:0"
 aten = torch.ops.aten
@@ -88,22 +93,23 @@ def sumcat_test(xpu_graph, func):
 
 class TestSumCat:
     def setup_class(self):
-        config = xpu_graph.config.XpuGraphConfig(is_training=False)
-        config.target = xpu_graph.config.Target.mlu
-        self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            is_training=False, freeze=True, opt_level=OptLevel.level2
+        )
 
     @pytest.mark.parametrize(
         "pattern_func",
         [fn0, fn1, fn2, fn3, fn4, fn5],
     )
-    def test_sumcat_patterns(self, pattern_func):
-        sumcat_test(self.xpu_graph, pattern_func)
+
+    def test_sfdp_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            sumcat_test(self.xpu_graph_backend, pattern_func)
+        #assert "Pattern.FusedCatSum changed graph" in caplog.text
 
 
 if __name__ == "__main__":
-    config = xpu_graph.config.XpuGraphConfig()
-    config.target = xpu_graph.config.Target.mlu
-    xpu_graph_backend = xpu_graph.compiler.XpuGraph(config)
+    xpu_graph_backend =  xpu_graph.mlu_compiler(is_training=False, freeze=True, opt_level=OptLevel.level2)
     sumcat_test(xpu_graph_backend, fn0)
     sumcat_test(xpu_graph_backend, fn1)
     sumcat_test(xpu_graph_backend, fn2)
