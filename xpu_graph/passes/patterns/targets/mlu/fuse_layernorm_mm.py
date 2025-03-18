@@ -109,5 +109,4 @@ class FusedLayernormMM(Pattern):
                 is_modified = True
         graph_module.graph.lint()
         graph_module.recompile()
-        print(graph_module.graph)
         return is_modified
