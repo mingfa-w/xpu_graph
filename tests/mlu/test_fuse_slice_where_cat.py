@@ -62,15 +62,9 @@ def where_slice_cat_test(xpu_graph_backend, func):
     res = func(inputs, slice_, batch)
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res1 = compiled(inputs, slice_, batch)
-    if func == fn0:
-        assertTensorsEqual(
-            res[0].cpu().float(), res1[0].cpu().float(), 1e-8, use_MSE=True, use_RAE=True
-        )
-    if func == fn1:
-        for i in range(len(res)):
-            assertTensorsEqual(
-                res[i].cpu().float(), res1[i].cpu().float(), 1e-8, use_MSE=True, use_RAE=True
-            )
+    for i in range(len(res)):
+        assert torch.equal(res[i].cpu().float(), res1[i].cpu().float())
+
 class TestWhereSliceCat:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2, is_training=False)
