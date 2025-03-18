@@ -1,9 +1,11 @@
 import torch
 import torch.fx as fx
-
+from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 
 class ChangeTensorLike(Pattern):
+    _stages = [FxStage.inference, FxStage.pregrad]
+
     def process(self, gm: fx.GraphModule):
         changed = False
         tensor_like_map = {
