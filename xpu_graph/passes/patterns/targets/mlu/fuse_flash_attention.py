@@ -1,7 +1,6 @@
 import torch
 from torch import nn, fx
 import torch_mlu
-import torch_mlu_ops
 from typing import List, Tuple
 
 from xpu_graph import OptLevel
@@ -31,6 +30,7 @@ def tmo_fa_forward(
     output_shape: List[int],
     output_dtype: torch.dtype,
 ) -> torch.Tensor:
+    import torch_mlu_ops
     if query.dtype != output_dtype:
         query = query.to(output_dtype)
     if key.dtype != output_dtype:

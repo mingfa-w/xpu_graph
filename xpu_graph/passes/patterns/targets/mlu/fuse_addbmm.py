@@ -3,7 +3,6 @@ from typing import Optional
 import torch
 from torch import nn, fx
 import torch_mlu
-import torch_mlu_ops
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
@@ -18,7 +17,6 @@ from ...utils.check_ops import (
     get_shape,
     get_dtype,
 )
-
 
 class FusedBAddBMMReplacement(nn.Module):
     def forward(self, input1, input2, bias, bmm_shape, output_shape, output_dtype):

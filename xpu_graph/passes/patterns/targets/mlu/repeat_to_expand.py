@@ -3,7 +3,6 @@ from typing import Optional, Tuple, Union
 import torch
 from torch import nn, fx
 import torch_mlu
-import torch_mlu_ops
 from xpu_graph.utils import logger
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
