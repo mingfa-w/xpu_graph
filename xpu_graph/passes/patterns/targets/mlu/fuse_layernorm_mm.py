@@ -4,7 +4,6 @@ import operator
 import torch
 from torch import nn, fx
 import torch_mlu
-import torch_mlu_ops
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
@@ -18,6 +17,7 @@ class FusedLayernormMMReplacement(nn.Module):
         self, inputs, norm_weight, norm_bias, eps, q_weight, q_bias, trans_b, shape_param,
         k_weight=None, k_bias=None, v_weight=None, v_bias=None,
     ):
+        import torch_mlu_ops
         if inputs.stride()[-1] != 1:
             inputs = inputs.contiguous()
         

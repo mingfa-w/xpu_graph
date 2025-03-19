@@ -1,7 +1,6 @@
 import torch
 import torch.fx as fx
 import torch_mlu
-import torch_mlu_ops
 
 from .triton_kernel.fused_slice import (
     fused_slice_low,
@@ -11,9 +10,9 @@ from .triton_kernel.fused_slice_cat import (
     fused_slice_cat,
 )
 
-
 class RMSNormModule(torch.nn.Module):
     def forward(self, inputs, weights, epsilon):
+        import torch_mlu_ops
         return torch_mlu_ops.fused_rms_norm(
             inputs, None, weights, None, None, epsilon, False
         )
