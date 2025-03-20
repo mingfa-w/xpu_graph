@@ -14,6 +14,10 @@ from .triton_kernel.shortcut_gather import (
     shortcut_gather,
 )
 
+from .triton_kernel.cat_two_dim import (
+    cat_two_dim,
+)
+
 class LayerNormModule(torch.nn.Module):
     def forward(self, input, weight, bias, epsilon):
         if weight is not None:
@@ -120,6 +124,13 @@ class ShortCutGatherModule(torch.nn.Module):
             prefix_len,
         )
 
+class SingleCatTwoDimModule(torch.nn.Module):
+    def forward(self, input_tensors, dim):
+        #breakpoint()
+        return torch.ops.torch_npu_triton.cat_two_dim(
+            input_tensors,
+            dim
+        )
 
 def get_structure_replacements():
     return {
@@ -128,4 +139,5 @@ def get_structure_replacements():
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule,
         "SingleContinuousGather": ShortCutGatherModule,
+        "SingleCatTwoDim": SingleCatTwoDimModule,
     } 
