@@ -1,10 +1,6 @@
 import torch
-from xpu_graph.compiler import XpuGraph
+from xpu_graph import XpuGraph, XpuGraphConfig
 import torch.fx as fx
-
-import xpu_ops
-
-xpu_ops.load_xpu_ops_npu()
 
 
 def test_register_pattern():
@@ -18,7 +14,7 @@ def test_register_pattern():
     def replacement(x: fx.node, y: fx.node):
         return torch.ops.aten.sub.Tensor(x, y)
 
-    xpu_graph = XpuGraph()
+    xpu_graph = XpuGraph(XpuGraphConfig(is_training=False))
     xpu_graph.get_pattern_manager().register_pattern(matcher, replacement)
 
     compiled = torch.compile(_add, backend=xpu_graph)
@@ -29,3 +25,7 @@ def test_register_pattern():
     from xpu_graph.test_utils import is_similar
 
     assert is_similar(res, a - b)
+
+
+if __name__ == "__main__":
+    test_register_pattern()

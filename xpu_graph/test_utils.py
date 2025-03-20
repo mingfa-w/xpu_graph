@@ -12,6 +12,12 @@ def is_similar(result, expected, rtol=0.01, atol=0.01):
     )
 
 
+def maybe_similar(result, expected, rtol=0.01, atol=0.01):
+    if result is None or expected is None:
+        return result is None and expected is None
+    return is_similar(result, expected, rtol, atol)
+
+
 def assertTensorsEqual(
     a,
     b,
@@ -84,6 +90,7 @@ def assertTensorsEqual(
             max_err = diff.max()
             tc.assertLessEqual(max_err, prec, message)
 
+
 class need_xpu_graph_logs:
     def __init__(self):
         self.original_propagate = logger.propagate
@@ -98,6 +105,7 @@ class need_xpu_graph_logs:
         logger.propagate = self.original_propagate
         logger.setLevel(self.original_level)
 
+
 class skip_xpu_graph_cache:
     def __init__(self, xpu_graph_backend: XpuGraph):
         self.backend = xpu_graph_backend
@@ -107,7 +115,6 @@ class skip_xpu_graph_cache:
         # Use base cache to skip save/load
         self.backend._cache = XpuGraphCache()
         return self
-    
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.backend._cache = self.cache

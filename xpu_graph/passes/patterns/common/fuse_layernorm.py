@@ -2,11 +2,14 @@ from typing import Optional, Union, Tuple
 
 import torch
 from torch import nn, fx
+import torch.nn.functional as F
 from typing import Callable, Optional, List
 from xpu_graph.config import OptLevel
 
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
+from xpu_graph.fx_utils import trace_and_inline, FxStage
+
 from ..utils.check_ops import (
     check_add_op,
     check_sub_op,
@@ -18,7 +21,6 @@ from ..utils.check_ops import (
     check_sqrt_op,
     check_rsqrt_op,
     get_input_node,
-    get_actual_node,
     get_input_kw_node,
     get_shape,
 )
@@ -35,13 +37,13 @@ def _is_unaffined_layernorm(
     sub = node0
     if not check_sub_op(sub):
         return False, None
-    input = get_actual_node(node0, 0)
+    input = get_input_node(node0, 0)
     # if len(get_shape(input)) <= 2:
     #     return False, None
     mean = get_input_node(node0, 1)
     if (
         not check_mean_op(mean)
-        or get_actual_node(mean, 0) != input
+        or get_input_node(mean, 0) != input
         or get_input_node(mean, 1) != [-1]
         or get_input_node(mean, 2) != True
     ):
@@ -75,7 +77,7 @@ def _is_unaffined_layernorm(
             var, eps = eps, var
 
     if (
-        get_actual_node(var, 0) != input
+        get_input_node(var, 0) != input
         or get_input_node(var, 1) != [-1]
         or get_input_kw_node(var, "keepdim") != True
         or not isinstance(eps, (float, int))
@@ -90,32 +92,32 @@ def _is_unaffined_layernorm(
 
 def _is_unbiased_layernorm(
     node: fx.Node,
-) -> Tuple[bool, Optional[Tuple[fx.Node, Optional[Union[float, int]], Optional[fx.Node]]]]:
+) -> Tuple[
+    bool, Optional[Tuple[fx.Node, Optional[Union[float, int]], Optional[fx.Node]]]
+]:
+    if check_mul_op(node):
+        unaffined_ln = get_input_node(node, 0)
+        weight = get_input_node(node, 1)
+        res, nodes = _is_unaffined_layernorm(unaffined_ln)
+        if res:
+            input, eps = nodes
+            if get_shape(input)[-1:] != get_shape(weight):
+                return False, None
+            return True, (input, eps, weight)
+
+        weight = get_input_node(node, 0)
+        unaffined_ln = get_input_node(node, 1)
+        res, nodes = _is_unaffined_layernorm(unaffined_ln)
+        if res:
+            input, eps = nodes
+            if get_shape(input)[-1:] != get_shape(weight):
+                return False, None
+            return True, (input, eps, weight)
+
     res, nodes = _is_unaffined_layernorm(node)
     if res:
         input, eps = nodes
         return True, (input, eps, None)
-
-    if not check_mul_op(node):
-        return False, None
-
-    unaffined_ln = get_input_node(node, 0)
-    weight = get_input_node(node, 1)
-    res, nodes = _is_unaffined_layernorm(unaffined_ln)
-    if res:
-        input, eps = nodes
-        if get_shape(input)[-1:] != get_shape(weight):
-            return False, None
-        return True, (input, eps, weight)
-
-    weight = get_input_node(node, 0)
-    unaffined_ln = get_input_node(node, 1)
-    res, nodes = _is_unaffined_layernorm(unaffined_ln)
-    if res:
-        input, eps = nodes
-        if get_shape(input)[-1:] != get_shape(weight):
-            return False, None
-        return True, (input, eps, weight)
 
     return False, None
 
@@ -134,45 +136,43 @@ def _is_layernorm(
         ]
     ],
 ]:
+    if check_add_op(node):
+        unbiased_ln = get_input_node(node, 0)
+        bias = get_input_node(node, 1)
+        res, nodes = _is_unbiased_layernorm(unbiased_ln)
+        if res:
+            input, eps, weight = nodes
+            if get_shape(input)[-1:] != get_shape(bias):
+                return False, None
+            return True, (input, eps, weight, bias)
+
+        bias = get_input_node(node, 0)
+        unbiased_ln = get_input_node(node, 1)
+        res, nodes = _is_unbiased_layernorm(unbiased_ln)
+        if res:
+            input, eps, weight = nodes
+            if get_shape(input)[-1:] != get_shape(bias):
+                return False, None
+            return True, (input, eps, weight, bias)
+
     res, nodes = _is_unbiased_layernorm(node)
     if res:
         input, eps, weight = nodes
         return True, (input, eps, weight, None)
 
-    if not check_add_op(node):
-        return False, None
-
-    unbiased_ln = get_input_node(node, 0)
-    bias = get_input_node(node, 1)
-    res, nodes = _is_unbiased_layernorm(unbiased_ln)
-    if res:
-        input, eps, weight = nodes
-        if get_shape(input)[-1:] != get_shape(bias):
-            return False, None
-        return True, (input, eps, weight, bias)
-
-    bias = get_input_node(node, 0)
-    unbiased_ln = get_input_node(node, 1)
-    res, nodes = _is_unbiased_layernorm(unbiased_ln)
-    if res:
-        input, eps, weight = nodes
-        if get_shape(input)[-1:] != get_shape(bias):
-            return False, None
-        return True, (input, eps, weight, bias)
-
     return False, None
+
+
+def layernorm_replacement(input, weight, bias, epsilon):
+    return F.layer_norm(input, input.shape[-1:], weight, bias, epsilon)
 
 
 class FusedLayerNorm(Pattern):
     _opt_level = OptLevel.level2
-
-    def __init__(self, target_mod: torch.nn.Module):
-        self.target_mod = target_mod
+    _stages = [FxStage.inference, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
-
         changed = False
-        graph_module.add_submodule("layer_norm_op", self.target_mod())
 
         for node in reversed(graph_module.graph.nodes):
             # Note: This pattern does not fuse residuals
@@ -185,8 +185,9 @@ class FusedLayerNorm(Pattern):
                 eps = 1e-6
 
             with graph_module.graph.inserting_before(node):
-                layer_norm_node = graph_module.graph.call_module(
-                    "layer_norm_op", args=(input, weight, bias, eps)
+                predispatch = self._stage == FxStage.pregrad
+                layer_norm_node = trace_and_inline(predispatch, graph_module, layernorm_replacement)(
+                    input, weight, bias, eps
                 )
 
             node.replace_all_uses_with(layer_norm_node)

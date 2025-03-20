@@ -1,5 +1,6 @@
 import torch
 import torch.fx as fx
+from xpu_graph.fx_utils import FxStage
 
 
 class PassManager:
@@ -33,16 +34,10 @@ class PassManager:
 
         self._passes.append(self._pattern_manager)
 
-    # def __call__(self, gm: fx.GraphModule, example_inputs):
-    #     changed = True
-    #     while changed:
-    #         from torch.fx.passes.shape_prop import ShapeProp
-    #         ShapeProp(gm).propagate(*example_inputs)
-    #         changed = False
-    #         for pass_ in self._passes:
-    #             changed = changed or pass_(gm)
 
-    def __call__(self, gm: fx.GraphModule, example_inputs):
+    def __call__(self, gm: fx.GraphModule, example_inputs, stage: FxStage):
+        # Set pattern_manager to run stage-specific passes
+        self.get_pattern_manager().set_stage(stage)
         changed = True
         from torch._dynamo.utils import detect_fake_mode
         fake_mode = detect_fake_mode()
@@ -59,9 +54,13 @@ class PassManager:
         gm.recompile()
 
         if self.config.enable_cache:
-          # Note: Currently, we only inline modules with a E2E make_fx, just for serialize / desrialize
-          from torch.fx.experimental.proxy_tensor import make_fx
-          gm = make_fx(gm, record_module_stack=True)(*example_inputs)
+            # Note: Currently, we only inline modules with a E2E make_fx, just for serialize / desrialize
+            from torch.fx.experimental.proxy_tensor import make_fx
+
+            pre_dispatch = stage == FxStage.pregrad
+            gm = make_fx(gm, pre_dispatch=pre_dispatch, record_module_stack=True)(
+                *example_inputs
+            )
 
         return gm
 

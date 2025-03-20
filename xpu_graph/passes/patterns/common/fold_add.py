@@ -2,12 +2,14 @@ import torch
 import torch.fx as fx
 
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.fx_utils import FxStage
 
 
 class FoldAdd0(Pattern):
     """
     Fold aten.add(x, zero_like) -> x
     """
+    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
 
     def process(self, gm: fx.GraphModule):
         changed = False

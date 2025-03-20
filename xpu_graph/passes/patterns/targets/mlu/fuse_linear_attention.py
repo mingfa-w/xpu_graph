@@ -1,7 +1,6 @@
 import torch
 from torch import nn, fx
 import torch_mlu
-import torch_mlu_ops
 from typing import List, Tuple
 
 from xpu_graph.passes.patterns.pattern import Pattern

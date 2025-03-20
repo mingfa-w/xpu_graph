@@ -351,30 +351,135 @@ def fn13(x):
     return x1, x2, x3, x4, x5, x6, x7
 
 
+def fn14(x):
+    tmp_Test = [
+        12573,
+        11984,
+        11562,
+        9782,
+        9727,
+        9745,
+        9763,
+        9773,
+        9805,
+        9822,
+        10283,
+        10736,
+    ]
+    input_list = []
+    for index in tmp_Test:
+        input_list.append(x[:, index : index + 4] + 1)
+    return input_list
+
+
+def fn15(x):
+    tmp_Test = [
+        9425,
+        18012,
+        11675,
+        12033,
+        9926,
+        10387,
+        10840,
+        11253,
+        9457,
+        18044,
+        11707,
+        12065,
+        9958,
+        10419,
+        10872,
+        11285,
+        9489,
+        18076,
+        11739,
+        12097,
+        9990,
+        10451,
+        10904,
+        11317,
+        9521,
+        18108,
+        11771,
+        12129,
+        10022,
+        10483,
+        10936,
+        11349,
+        9553,
+        18140,
+        11803,
+        12161,
+        10054,
+        10515,
+        10968,
+        11381,
+        9585,
+        18172,
+        11835,
+        12193,
+        10086,
+        10547,
+        11000,
+        11413,
+        9617,
+        18204,
+        11867,
+        12225,
+        10118,
+        10579,
+        11032,
+        11445,
+    ]
+    input_list = []
+    for index in tmp_Test:
+        input_list.append(x[:, index : index + 32] + 1)
+    return input_list
+
+
 def slice_test(xpu_graph_backend, func):
-    a = torch.randn(10, 43106).to(device=device)
-    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
-    res = compiled(a)[0]
-    res1 = func(a)[0]
-    assert is_similar(res1.float(), res.float())
+    for batch in (10, 512, 256, 128, 64, 32):
+        a = torch.randn(batch, 43106).to(device=device)
+        compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+        res = compiled(a)[0]
+        res1 = func(a)[0]
+        assert is_similar(res1.float(), res.float())
 
 
 class TestSlice:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            freeze=True, opt_level=OptLevel.level2
+            is_training=False, freeze=True, opt_level=OptLevel.level2
         )
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn0, fn1, fn2, fn3, fn5, fn6, fn7, fn8, fn9, fn10, fn11, fn12, fn13],
+        [
+            fn0,
+            fn1,
+            fn2,
+            fn3,
+            fn5,
+            fn6,
+            fn7,
+            fn8,
+            fn9,
+            fn10,
+            fn11,
+            fn12,
+            fn13,
+            fn14,
+            fn15,
+        ],
     )
     def test_slice_patterns(self, pattern_func):
         slice_test(self.xpu_graph_backend, pattern_func)
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(freeze=True, opt_level=OptLevel.level2)
+    xpu_graph_backend = xpu_graph.mlu_compiler(
+        is_training=False, freeze=True, opt_level=OptLevel.level2
+    )
     slice_test(xpu_graph_backend, fn0)
     slice_test(xpu_graph_backend, fn1)
     slice_test(xpu_graph_backend, fn2)
@@ -388,3 +493,5 @@ if __name__ == "__main__":
     slice_test(xpu_graph_backend, fn11)
     slice_test(xpu_graph_backend, fn12)
     slice_test(xpu_graph_backend, fn13)
+    slice_test(xpu_graph_backend, fn14)
+    slice_test(xpu_graph_backend, fn15)

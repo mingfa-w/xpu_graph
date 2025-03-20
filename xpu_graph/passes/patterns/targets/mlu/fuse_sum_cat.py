@@ -8,6 +8,7 @@ from ...utils.check_ops import (
     check_sum_op,
     check_stack_op,
     check_slice_op,
+    check_meta_2d,
 )
 from .triton_kernel.fused_sum_cat import (
     fuse_sum_cat_2d,
@@ -74,41 +75,77 @@ class ConcatenateSumOperation1(nn.Module):
 class SliceSumCatOperation(nn.Module):
     def forward(self, input, slice_param):
         """
-        target_tensors = []
-        for slice_arg in slice_args:
-            slice_tensor = input[:,slice_arg[0]:slice_arg[1],:]
-            sum_tensor = torch.sum(slice_tensor, dim = [1])
-            target_tensors.append(sum_tensor)
-        return torch.cat(target_tensors, axis = -1)
+        Forward pass for the SliceSumCatOperation.
+
+        Args:
+            input (torch.Tensor): The input tensor of shape (batch, row, col).
+            slice_param (list of tuples): A list of slice indices, where each tuple
+                                          contains (start_idx, end_idx) for slicing.
+
+        Returns:
+            torch.Tensor: The output tensor of shape (batch, len(slice_param) * col). The processed tensor after slice -> sum -> cat operations.
         """
-        processor_count = torch.mlu.get_device_properties(
-            torch.mlu.current_device()
-        ).multi_processor_count
+        batch, row, col = input.shape
+        start = min([s[0] for s in slice_param])
+        end = max([s[1] for s in slice_param])
+        # Ensure the slicing range does not exceed 1024 for computational efficiency
+        if (end - start) > 1024:
+            target_tensors = []
+            for slice_arg in slice_param:
+                slice_tensor = input[:, slice_arg[0] : slice_arg[1], :]
+                sum_tensor = torch.sum(slice_tensor, dim=[1])
+                target_tensors.append(sum_tensor)
+            return torch.cat(target_tensors, axis=-1)
+        else:
+            processor_count = torch.mlu.get_device_properties(
+                torch.mlu.current_device()
+            ).multi_processor_count
+            slice_ = []
+            for param in slice_param:
+                slice_ += [param[0], param[1]]
+            slice_tensor = torch.tensor(slice_, dtype=torch.int32, device=input.device)
+            output_num = len(slice_param)
+            return fuse_slice_sum_cat(
+                input, slice_tensor, processor_count, output_num, end
+            )
 
-        slice_ = []
-        for param in slice_param:
-            slice_ += [param[0], param[1]]
-        slice_tensor = torch.tensor(slice_, dtype=torch.int32, device=input.device)
-        output_num = len(slice_param)
 
-        return fuse_slice_sum_cat(input, slice_tensor, processor_count, output_num)
-
-
-# (slice->sum) * n
+# This function identifies slice->sum patterns in a computation graph (gm).
+# The detected pattern consists of:
+#  - A slice operation (input: 3D, output: 3D)
+#  - A sum operation (input: 3D, output: 2D)
+# Both slice and sum nodes should have only one output to maintain a strict computational structure.
 def find_slice_sum_pattern(gm):
+    # Dictionary to store mapping from source nodes to sum nodes
     slice_dict = {}
     for node in gm.graph.nodes:
+        ### Identify sum operation: input 3D, output 2D ###
         if not check_sum_op(node):
             continue
+        if not check_meta_2d(node):
+            continue
+        # check sum dim
         if node.args[1] != [1]:
             continue
+        # don't keep dim
+        if len(node.args) > 2:
+            continue
+        if len(node.users) != 1:
+            continue
+
+        ### Identify slice operation: input 3D, output 3D ###
         slice_node = node.args[0]
         if not check_slice_op(slice_node):
             continue
+        # check slice dim
         if slice_node.args[1] != 1:
+            continue
+        # This restriction is currently in place but will be removed in the future.
+        if slice_node.args[2] != 0:
             continue
         if len(slice_node.users) != 1:
             continue
+
         src_node = slice_node.args[0]
         if src_node not in slice_dict:
             slice_dict[src_node] = []
@@ -131,17 +168,21 @@ def match_slice_sum_cat_pattern(cat_input, slice_dict):
         is_match, src_node, s_list = match_slice_dict(slice_dict, s)
         if not is_match:
             continue
+        # Identify a contiguous sequence of sum nodes
         sum_start = idx
         sum_end = idx
+        # Search for sum nodes that are derived from the same slice operation
         for next_idx in range(idx + 1, len(cat_input)):
             next_s = cat_input[next_idx]
             if next_s in s_list:
                 sum_end = next_idx
             else:
                 break
+        # Ensure there are at least two consecutive sum nodes
         if (sum_end - sum_start) < 2:
             continue
         match_sum_list = cat_input[sum_start : sum_end + 1]
+        # Record the slice parameters from the matched sum nodes
         args = [(s.args[0].args[2], s.args[0].args[3]) for s in match_sum_list]
         return True, (sum_start, sum_end), src_node, args
     return False, None, None, None
