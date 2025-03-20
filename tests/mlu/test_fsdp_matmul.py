@@ -2,10 +2,10 @@ import pytest
 from tests.mlu.test_train_utils import *
 
 
-def train(rank, world_size, do_compile, return_queue):
+def train(rank, world_size, do_compile, return_queue, model_path):
     train_setup(rank, world_size)
     model = MatMulModel(10)
-    model.load_state_dict(torch.load("model.pth"))
+    model.load_state_dict(torch.load(model_path))
     if do_compile:
         xpu_graph_backend = xpu_graph.mlu_compiler(
             is_training=True, freeze=False, opt_level=OptLevel.level2
@@ -40,18 +40,18 @@ def train(rank, world_size, do_compile, return_queue):
     cleanup()
 
 
-def fsdp_test(fn):
+def fsdp_test(ModCls, model_path="fsdp_model.pth"):
     mp.set_start_method("spawn", force=True)
     world_size = torch.mlu.device_count()
     return_queue1 = mp.Queue()
     return_queue2 = mp.Queue()
-    model = fn()
-    torch.save(model.state_dict(), "model.pth")
+    model = ModCls()
+    torch.save(model.state_dict(), model_path)
 
     do_compile = 0
     torch.multiprocessing.spawn(
         train,
-        args=(world_size, do_compile, return_queue1),
+        args=(world_size, do_compile, return_queue1, model_path),
         nprocs=world_size,
         join=True,
     )
@@ -63,7 +63,7 @@ def fsdp_test(fn):
     do_compile = 1
     torch.multiprocessing.spawn(
         train,
-        args=(world_size, do_compile, return_queue2),
+        args=(world_size, do_compile, return_queue2, model_path),
         nprocs=world_size,
         join=True,
     )
@@ -84,8 +84,8 @@ class TestFSDP:
             MatMulModel,
         ],
     )
-    def test_rmsnorm_patterns(self, pattern_func):
-        fsdp_test(pattern_func)
+    def test_rmsnorm_patterns(self, tmp_path, pattern_func):
+        fsdp_test(pattern_func, tmp_path / "fsdp_model.pth")
 
 
 if __name__ == "__main__":
