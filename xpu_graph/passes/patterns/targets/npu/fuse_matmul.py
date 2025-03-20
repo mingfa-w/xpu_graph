@@ -183,7 +183,6 @@ class FusedMatMulReplacement(nn.Module):
         if inputs.stride()[-1] != 1:
             inputs = inputs.contiguous()
 
-        # output = torch.ops.torch_npu_triton.triton_matmul(inputs, weight)
         if bias != None:
             if isinstance(bias, int):
                 dim = weight.shape[1] if trans_b == False else weight.shape[0]
@@ -192,13 +191,11 @@ class FusedMatMulReplacement(nn.Module):
                 )
         # bias 2d or None
         if bias is not None:
-            output = torch.matmul(inputs, weight) + bias
+            output = torch.ops.torch_npu_triton.triton_matmul(inputs, weight) + bias
         else:
-            output = torch.matmul(inputs, weight)
+            output = torch.ops.torch_npu_triton.triton_matmul(inputs, weight)
         if act == "relu":
             output = torch.relu(output)
-        elif act == "gelu":
-            output = torch_npu.fast_gelu(output)
         if shape_param:
             output = output.view(shape_param)
         return output
@@ -392,17 +389,4 @@ class FusedMatMul(Pattern):
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_1_replacement")
         graph_module.graph.lint()
         graph_module.recompile()
-
-        is_modified |= match_mm_add1(graph_module)
-        is_modified |= match_mm_add2(graph_module)
-        is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_2_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
-
-        is_modified |= match_mm_act(graph_module)
-        is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_3_replacement")
-        is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_4_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
-
         return is_modified
