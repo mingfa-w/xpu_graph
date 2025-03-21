@@ -1,7 +1,7 @@
 import pytest
 import torch
 import xpu_graph
-from xpu_graph.test_utils import is_similar
+from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
 
 def fn0(a):
@@ -28,10 +28,20 @@ def fn4(a):
     output = a_squeeze.view(-1, 1)
     return output
 
+def fn5(a):
+    a_squeeze = a.squeeze(1)
+    output = a_squeeze.view(-1, 1)
+    return output
+
+def fn6(a):
+    a_squeeze = a.squeeze(1, 3)
+    output = a_squeeze.view(-1, 1)
+    return output
+
 def view_test(xpu_graph, func):
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
     a = torch.randn(128, 64)
-    if func in [fn2]:
+    if func in [fn2, fn5, fn6]:
         a = torch.randn(128, 1, 64, 1)
     res = func(a)
     res1 = compiled(a)
@@ -52,10 +62,17 @@ class TestView:
             fn2,
             fn3,
             fn4,
+            fn5,
+            fn6,
         ],
     )
-    def test_view_patterns(self, pattern_func):
-        view_test(self.xpu_graph, pattern_func)
+    def test_view_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
+            view_test(self.xpu_graph, pattern_func)
+        if pattern_func in [fn0]:
+            assert "Pattern.FoldView0 changed graph" in caplog.text
+        else:
+            assert "Pattern.FoldView1 changed graph" in caplog.text
 
 
 if __name__ == "__main__":
@@ -66,3 +83,5 @@ if __name__ == "__main__":
     view_test(xpu_graph, fn2)
     view_test(xpu_graph, fn3)
     view_test(xpu_graph, fn4)
+    view_test(xpu_graph, fn5)
+    view_test(xpu_graph, fn6)

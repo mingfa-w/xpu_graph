@@ -2,6 +2,7 @@ import torch
 import torch.fx as fx
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.check_ops import get_input_node, get_input_kw_node
 
 class FoldStack(Pattern):
     _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
@@ -11,16 +12,17 @@ class FoldStack(Pattern):
         candidates = [node for node in gm.graph.nodes if node.op == 'call_function' and node.target == torch.ops.aten.stack.default]
 
         for stack in candidates:
-            inps = stack.args[0]
+            inps = get_input_node(stack, 0)
             if len(inps) == 1:
                 changed = True
                 inp = inps[0]
+                dim = get_input_kw_node(stack, 'dim')
                 with gm.graph.inserting_before(stack):
                     view = gm.graph.call_function(
-                        torch.ops.aten.view.default,
+                        torch.ops.aten.unsqueeze.default,
                         args=(
                             inp,
-                            stack.meta['tensor_meta'].shape
+                            dim
                         )
                     )
                     stack.replace_all_uses_with(view)
