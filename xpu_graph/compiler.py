@@ -173,13 +173,13 @@ class XpuGraph:
 
             logger.info("unlift graph start...")
             logger.debug(f"before unlift, graph like:\n {exported_gm.graph}")
-            unlfited_gm = unlift_exported_gm(
+            unlifted_gm = unlift_exported_gm(
                 dynamo_gm, exported_gm, gs, freeze=self._config.freeze
             )
             logger.info("unlift graph complete")
-            logger.debug(f"after unlift, graph like:\n {unlfited_gm.graph}")
+            logger.debug(f"after unlift, graph like:\n {unlifted_gm.graph}")
 
-            xpu_gm = _compiler(unlfited_gm, example_inputs, stage=FxStage.inference)
+            xpu_gm = _compiler(unlifted_gm, example_inputs, stage=FxStage.inference)
 
         return xpu_gm
 

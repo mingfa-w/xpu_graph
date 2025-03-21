@@ -59,7 +59,8 @@ class XpuGraphConfig:
     def _reset_config_with_env(self):
         import os
 
-        self.debug = os.getenv("XPUGRAPH_DEBUG", "0") == "1"  # 1: enable 0: disable
+        if os.getenv("XPUGRAPH_DEBUG") is not None:
+            self.debug = os.getenv("XPUGRAPH_DEBUG", "0") == "1"  # 1: enable 0: disable
 
         opt_level_env = os.getenv("XPUGRAPH_OPT_LEVEL", str(self.opt_level.value))
         if opt_level_env == "0":
