@@ -23,12 +23,7 @@ class FoldReduce(Pattern):
                 changed = True
                 with gm.graph.inserting_before(reduce):
                     if keep_dim:
-                        view = gm.graph.call_function(
-                            torch.ops.aten.clone.default,
-                            args=(
-                                inp,
-                            )
-                        )
+                        view = inp
                     else:
                         view = gm.graph.call_function(
                             torch.ops.aten.squeeze.dims,
