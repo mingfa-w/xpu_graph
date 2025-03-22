@@ -3,7 +3,6 @@ import torch
 import xpu_graph
 from xpu_graph.config import OptLevel
 import torch.nn.functional as F
-from xpu_graph.test_utils import assertTensorsEqual
 from xpu_graph.test_utils import (
     assertTensorsEqual,
     need_xpu_graph_logs,
