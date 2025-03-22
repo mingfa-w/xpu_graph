@@ -37,7 +37,12 @@ class XpuGraphCache:
 
     def delete_gm(self, key):
         return None
-
+    
+    def _set_cache_ctx(self):
+        return None
+        
+    def _restore_cache_ctx(self, orig_ctx):
+        pass
 
 class XpuGraphLocalCache(XpuGraphCache):
     def __init__(self, cache_path: PathLike):
@@ -45,10 +50,6 @@ class XpuGraphLocalCache(XpuGraphCache):
         cache_path = os.path.abspath(cache_path)
         os.makedirs(cache_path, exist_ok=True)
         self._path = cache_path
-
-        # FIXME: Currently we manually set inductor cache dir for vendor compiler
-        #        environs should not be tainted once AOT pipeline is ready
-        os.environ["TORCHINDUCTOR_CACHE_DIR"] = os.path.join(cache_path, "inductor")
 
     def save_gm(
         self, key, value: torch.fx.GraphModule, expire=None
@@ -81,7 +82,29 @@ class XpuGraphLocalCache(XpuGraphCache):
         fname = f"xpugraph_{key}.pt"
         artifact_cache = os.path.join(self._path, fname)
         return artifact_cache
+        
+    def _set_cache_ctx(self):
+        orig_ctx = {}
+        if "TORCHINDUCTOR_CACHE_DIR" in os.environ:
+            orig_ctx["TORCHINDUCTOR_CACHE_DIR"] = os.environ["TORCHINDUCTOR_CACHE_DIR"]
+        if "TRITON_CACHE_DIR" in os.environ:
+            orig_ctx["TRITON_CACHE_DIR"] = os.environ["TRITON_CACHE_DIR"]
 
+        # FIXME: Currently we manually set inductor cache dir for vendor compiler
+        #        environs should not be tainted once AOT pipeline is ready
+        os.environ["TORCHINDUCTOR_CACHE_DIR"] = os.path.join(self._path, "inductor")
+        os.environ['TRITON_CACHE_DIR'] = os.path.join(self._path, 'triton')
+        return orig_ctx
+        
+    def _restore_cache_ctx(self, orig_ctx):
+        if "TORCHINDUCTOR_CACHE_DIR" in orig_ctx:
+            os.environ["TORCHINDUCTOR_CACHE_DIR"] = orig_ctx["TORCHINDUCTOR_CACHE_DIR"]
+        else:
+            del os.environ["TORCHINDUCTOR_CACHE_DIR"]
+        if "TRITON_CACHE_DIR" in orig_ctx:
+            os.environ["TRITON_CACHE_DIR"] = orig_ctx["TRITON_CACHE_DIR"]
+        else:
+            del os.environ["TRITON_CACHE_DIR"]
 
 def no_cache():
     return XpuGraphCache()

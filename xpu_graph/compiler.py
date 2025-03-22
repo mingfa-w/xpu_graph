@@ -68,22 +68,14 @@ class XpuGraph:
 
         logger.info(f"{config}")
 
-        if self._config.freeze and self._config.is_training == False:
-            # The configuration in this inductor affects the return value of is_parameter_freezing(),
-            # thereby influencing the process of generating the fx_graph in dynamo. The current code
-            # in the community is not very clean, and it would be more reasonable to place this
-            # configuration under dynamo. You can refer to this link for more information.
-            # https://github.com/pytorch/pytorch/blob/release/2.5/torch/_dynamo/utils.py#L3061
-            torch._inductor.config.freezing = True
-        else:
-            torch._inductor.config.freezing = False
-
         self._pass_manager = PassManager(self._config)
         self._cache = (
             cache
             if cache and config.enable_cache
             else default_cache() if config.enable_cache else None
         )
+
+        self._set_context()
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, sample_inputs, stage: FxStage):
@@ -185,3 +177,28 @@ class XpuGraph:
 
     def get_pattern_manager(self):
         return self._pass_manager.get_pattern_manager()
+
+    def _set_context(self):
+        self._orig_ctx = {}
+        self._orig_ctx["torch._inductor.config.freezing"] = (
+            torch._inductor.config.freezing
+        )
+        if self._config.freeze and self._config.is_training == False:
+            # The configuration in this inductor affects the return value of is_parameter_freezing(),
+            # thereby influencing the process of generating the fx_graph in dynamo. The current code
+            # in the community is not very clean, and it would be more reasonable to place this
+            # configuration under dynamo. You can refer to this link for more information.
+            # https://github.com/pytorch/pytorch/blob/release/2.5/torch/_dynamo/utils.py#L3061
+            torch._inductor.config.freezing = True
+        else:
+            torch._inductor.config.freezing = False
+
+        if self._cache is not None:
+            self._orig_ctx["self._cache.orig_ctx"] = self._cache._set_cache_ctx()
+
+    def _restore_context(self):
+        torch._inductor.config.freezing = self._orig_ctx[
+            "torch._inductor.config.freezing"
+        ]
+        if self._cache is not None:
+            self._cache._restore_cache_ctx(self._orig_ctx["self._cache.orig_ctx"])
