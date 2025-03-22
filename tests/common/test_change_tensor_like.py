@@ -8,9 +8,11 @@ def fn0(a):
     output = torch.ones_like(a)
     return output
 
+
 def fn1(a):
     output = torch.zeros_like(a)
     return output
+
 
 def fn2(a):
     output = torch.ones_like(a)
@@ -18,19 +20,21 @@ def fn2(a):
 
 
 def inner_fn(zeros, ones):
-        zeros = torch.zeros_like(zeros)
-        ones = torch.ones_like(ones)
-        output = torch.concat([zeros, ones], dim=0)
-        return output
-    
+    zeros = torch.zeros_like(zeros)
+    ones = torch.ones_like(ones)
+    output = torch.concat([zeros, ones], dim=0)
+    return output
+
+
 def fn3(a):
     b = torch.sum(a, dim=1)
     outputs = []
     for i in range(10):
-        output = inner_fn(a[b>=i], a[b<i])
+        output = inner_fn(a[b >= i], a[b < i])
         outputs.append(output)
     output = torch.stack(outputs, dim=0)
     return output
+
 
 def tensorlike_test(xpu_graph, func):
     compiled = torch.compile(func, backend=xpu_graph, dynamic=None)
@@ -59,7 +63,7 @@ class TestTensorLike:
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph):
             tensorlike_test(self.xpu_graph, pattern_func)
         if pattern_func not in [fn3]:
-            assert "Pattern.ChangeTensorLike changed graph" in caplog.text 
+            assert "Pattern.ChangeTensorLike changed graph" in caplog.text
 
 
 if __name__ == "__main__":
