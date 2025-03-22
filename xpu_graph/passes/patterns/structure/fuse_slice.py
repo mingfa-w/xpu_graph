@@ -6,7 +6,10 @@ from typing import Callable
 from ..utils.check_ops import (
     check_slice_op,
     check_stack_op,
+    check_meta_2d,
+    get_node_dim
 )
+from xpu_graph.fx_utils import FxStage
 
 
 def custom_getitem(tensor_list, index):
@@ -48,6 +51,24 @@ def find_slice_nodes(graph_module):
     for node in graph_module.graph.nodes:
         if not check_slice_op(node):
             continue
+        if not isinstance(node.args[1], int):
+            continue
+        if not isinstance(node.args[2], int):
+            continue
+        if not isinstance(node.args[3], int):
+            continue
+        #slice dim must be lowest dim
+        src_node = node.args[0]
+        axis = node.args[1]
+        node_dim = get_node_dim(src_node)
+        if node_dim ==2:
+            if (axis != 1) and (axis != -1):
+                continue
+        elif node_dim == 3:
+            if (axis != 2) and (axis != -1):
+                continue
+        else:
+            continue
         # Skip slice nodes that are directly connected to the output node.
         if len(node.users) == 1:
             if next(iter(node.users)).target == "output":
@@ -72,11 +93,13 @@ class FusedSlice(Pattern):
         candi_nodes = find_slice_nodes(graph_module)
 
         for src_node, nodes in candi_nodes.items():
+            #if not check_meta_2d(src_node):
+            #    continue
             # grouped by output_len
             divide_nodes = divide_nodes_in_slice_len(nodes)
 
             for slice_len, nodes2 in divide_nodes.items():
-                if len(nodes2) < 3:
+                if len(nodes2) < 2:
                     continue
                 start_indices = [n[1] for n in nodes2]
                 replace_n = [n[0] for n in nodes2]
