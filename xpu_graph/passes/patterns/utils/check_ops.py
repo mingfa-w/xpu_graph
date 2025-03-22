@@ -299,8 +299,21 @@ def check_addmm_op(
     arg3 = get_input_node(node, 2)
     return True, arg1, arg2, arg3
 
+
+def check_linear_op(
+    node: fx.Node,
+) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None], Union[fx.Node, None]]:
+    if check_op(node, torch.ops.aten.linear.default):
+        arg1 = node.args[0]
+        arg2 = node.args[1]
+        arg3 = node.args[2]
+        return True, arg1, arg2, args3
+    return False, None, None, None
+
+
 def check_where_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.where.self)
+
 
 def check_zeros_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.zeros.default)
