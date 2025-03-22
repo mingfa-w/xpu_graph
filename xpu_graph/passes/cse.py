@@ -8,6 +8,7 @@ from xpu_graph.passes.optimizer import Optimizer
 
 class Cse(Optimizer):
     def process(self, gm: fx.GraphModule):
+        print(gm.graph)
         from torch._functorch.compile_utils import fx_graph_cse
         cse_graph = fx_graph_cse(gm.graph)
 

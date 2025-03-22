@@ -62,6 +62,10 @@ class XpuGraph:
         cache: XpuGraphCache = None,
     ):
         config._reset_config_with_env()
+        if config.is_training and config.freeze:
+            raise ValueError(
+                "Freezing training graph is not supported, please set freeze=False"
+            )
         self._config = config
         # Setup logging based on config
         setup_logger(logging.DEBUG if self._config.debug else logging.INFO)
@@ -104,20 +108,6 @@ class XpuGraph:
                     logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
                     logger.info(f"xpu_graph passes start {stage}...")
 
-                if stage == FxStage.pregrad:
-                    logger.debug(f"before decompose: graph like:\n {gm.graph}")
-                    logger.info("decompose graph start...")
-                    from torch.fx.experimental.proxy_tensor import make_fx
-
-                    gm = make_fx(
-                        gm,
-                        tracing_mode="fake",
-                        pre_dispatch=True,
-                        record_module_stack=True,
-                    )(*fake_inputs)
-                    logger.info("decompose graph complete")
-                    logger.debug(f"after decompose, graph like:\n {gm.graph}")
-
                 if self._config.enable_cache:
                     hashkey = self._cache.cache_key(
                         gm, fake_inputs, self._config, stage
@@ -151,31 +141,24 @@ class XpuGraph:
                     )
 
             return xpu_compiled
-        
+
         def _staged_compiler(stage: FxStage):
             def wrapped(gm, sample_inputs):
                 with local_logger(stage.name):
                     xpu_compiled = _compiler(gm, sample_inputs, stage)
                 return xpu_compiled
-            
+
             return wrapped
 
-        if self._config.is_training:
-            # Since: 1. dynamo has eliminated control-flow for input GraphModule
-            #    and 2. aot_autograd traces grad again
-            # It's okay use optimized infer-graph for training as well
-            pregrad_gm = _staged_compiler(FxStage.pregrad)(dynamo_gm, example_inputs)
-
-            xpu_gm = aot_autograd(
-                fw_compiler=_staged_compiler(FxStage.forward),
-                bw_compiler=_staged_compiler(FxStage.backward),
-            )(pregrad_gm, example_inputs)
-        else:
+        with local_logger("preprocess"):
             logger.info("aot_export_module start...")
             logger.debug(f"before aot_export_module, graph like:\n {dynamo_gm.graph}")
 
             exported_gm, gs = aot_export_module(
-                dynamo_gm, example_inputs, trace_joint=False
+                dynamo_gm,
+                example_inputs,
+                trace_joint=False,
+                pre_dispatch=self._config.is_training,
             )
             logger.info("aot_export_module complete")
             logger.debug(f"after aot_export_module, graph like:\n {exported_gm.graph}")
@@ -189,6 +172,17 @@ class XpuGraph:
             logger.info("unlift graph complete")
             logger.debug(f"after unlift, graph like:\n {unlifted_gm.graph}")
 
+        if self._config.is_training:
+            # Since: 1. dynamo has eliminated control-flow for input GraphModule
+            #    and 2. aot_autograd traces grad again
+            # It's okay use optimized infer-graph for training as well
+            pregrad_gm = _staged_compiler(FxStage.pregrad)(unlifted_gm, example_inputs)
+
+            xpu_gm = aot_autograd(
+                fw_compiler=_staged_compiler(FxStage.forward),
+                bw_compiler=_staged_compiler(FxStage.backward),
+            )(pregrad_gm, example_inputs)
+        else:
             xpu_gm = _staged_compiler(FxStage.inference)(unlifted_gm, example_inputs)
 
         return xpu_gm
