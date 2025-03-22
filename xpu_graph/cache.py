@@ -78,7 +78,7 @@ class XpuGraphLocalCache(XpuGraphCache):
             del self.cache[key]
 
     def _graph_path(self, key):
-        fname = f"xpu_graph_{key}.pt"
+        fname = f"xpugraph_{key}.pt"
         artifact_cache = os.path.join(self._path, fname)
         return artifact_cache
 
@@ -88,10 +88,10 @@ def no_cache():
 
 
 def default_cache():
-    cache_path = os.getenv("XPU_GRAPH_CACHE_DIR")
+    cache_path = os.getenv("XPUGRAPH_CACHE_DIR")
     if cache_path is None:
         import tempfile
 
-        cache_path = tempfile.mkdtemp(prefix="xpu_graph_")
+        cache_path = tempfile.mkdtemp(prefix="xpugraph_")
         logger.debug(f"Use {cache_path} as default local cache")
     return XpuGraphLocalCache(cache_path)
