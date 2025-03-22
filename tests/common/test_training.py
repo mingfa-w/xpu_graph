@@ -29,6 +29,37 @@ class SliceCatModel(nn.Module):
         return torch.cat([-x[..., 8:], x[..., :8]], 1).sum(dim=-1)
 
 
+class InplcaeModel(nn.Module):
+    def __init__(self, input_dim):
+        super(InplcaeModel, self).__init__()
+        self.fc = nn.Linear(input_dim, 16)
+
+    def forward(self, x):
+        x = self.fc(x)
+        y = x.clone()
+        x.add_(1)
+        z = x + y
+        return z.sum(dim=-1)
+
+
+class ConstantInplaceModel(nn.Module):
+    def __init__(self, input_dim):
+        super(ConstantInplaceModel, self).__init__()
+        self.fc = nn.Linear(input_dim, 16)
+
+    def forward(self, x):
+        x = self.fc(x)
+        indices = x.sum(dim=-1).nonzero().squeeze(-1)
+        y = x[indices].sum(-1)
+        max_len = indices.max() + 1
+        zeros = torch.zeros(max_len, dtype=y.dtype)
+        zeros.scatter_(0, indices, y)
+        result = torch.cat(
+            [zeros, torch.zeros(x.shape[0] - max_len, dtype=zeros.dtype)], dim=0
+        )
+        return result
+
+
 def compare_training(ModCls, backend, nsteps=4, bsz=8, input_dim=16):
     golden = ModCls(input_dim).to(device=device, dtype=data_type)
     compiled = ModCls(input_dim).to(device=device, dtype=data_type)
@@ -71,7 +102,7 @@ class TestTraining:
 
     @pytest.mark.parametrize(
         "ReproCls",
-        [SimpleModel, SliceCatModel],
+        [SimpleModel, SliceCatModel, InplcaeModel, ConstantInplaceModel],
     )
     def test_layernrom_patterns_with_loss_and_grad(self, ReproCls):
         compare_training(ReproCls, self.train_backend)
@@ -79,8 +110,10 @@ class TestTraining:
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
-        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=False
+        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=True
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     compare_training(SimpleModel, xpu_graph_backend)
     compare_training(SliceCatModel, xpu_graph_backend)
+    compare_training(InplcaeModel, xpu_graph_backend)
+    compare_training(ConstantInplaceModel, xpu_graph_backend)

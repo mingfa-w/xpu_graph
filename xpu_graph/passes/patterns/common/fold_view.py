@@ -2,6 +2,7 @@ import torch
 import torch.fx as fx
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.check_ops import check_view_like_ops
 
 
 class FoldView0(Pattern):
@@ -37,16 +38,6 @@ class FoldView0(Pattern):
         return changed
 
 
-_view_like_ops = (
-    torch.ops.aten.view.default,
-    torch.ops.aten._unsafe_view.default,
-    torch.ops.aten.squeeze.default,
-    torch.ops.aten.squeeze.dim,
-    torch.ops.aten.squeeze.dims,
-    torch.ops.aten.unsqueeze.default,
-)
-
-
 class FoldView1(Pattern):
     """
     Fold aten.view(aten.view) -> aten.view
@@ -68,11 +59,7 @@ class FoldView1(Pattern):
 
         for view in candidates:
             inp = view.args[0]
-            if (
-                isinstance(inp, fx.Node)
-                and inp.op == "call_function"
-                and inp.target in _view_like_ops
-            ):
+            if check_view_like_ops(inp):
                 changed = True
                 view.replace_input_with(inp, inp.args[0])
 

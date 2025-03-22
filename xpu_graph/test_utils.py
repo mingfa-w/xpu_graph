@@ -18,6 +18,19 @@ def maybe_similar(result, expected, rtol=0.01, atol=0.01):
     return is_similar(result, expected, rtol, atol)
 
 
+def aggregate_similar(result, expected, rtol=0.01, atol=0.01):
+    if isinstance(result, tuple) or isinstance(expected, tuple):
+        if not isinstance(result, tuple) or not isinstance(expected, tuple):
+            return False
+        if len(result) != len(expected):
+            return False
+        return all(
+            [aggregate_similar(r, e, rtol, atol) for r, e in zip(result, expected)]
+        )
+    else:
+        return is_similar(result, expected, rtol, atol)
+
+
 def assertTensorsEqual(
     a,
     b,

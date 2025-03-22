@@ -299,8 +299,44 @@ def check_addmm_op(
     arg3 = get_input_node(node, 2)
     return True, arg1, arg2, arg3
 
+
 def check_where_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.where.self)
 
+
 def check_zeros_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.zeros.default)
+
+
+def check_view_like_ops(node: fx.node) -> bool:
+    _view_like_ops = (
+        torch.ops.aten.view.default,
+        torch.ops.aten._unsafe_view.default,
+        torch.ops.aten.squeeze.default,
+        torch.ops.aten.squeeze.dim,
+        torch.ops.aten.squeeze.dims,
+        torch.ops.aten.unsqueeze.default,
+    )
+    return _is_valid_node(node) and node.target in _view_like_ops
+
+
+def check_inplace_copy_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.copy_.default)
+
+
+def is_node_escaped(node: fx.node) -> bool:
+    if not isinstance(node, fx.Node):
+        return False
+    src = node
+    while check_view_like_ops(src):
+        src = src.args[0]
+    if src.op == "getattr" or src.op == "placeholder":
+        return True
+    for user in node.users:
+        if user.op == "output":
+            return True
+        if check_inplace_copy_op(user) and node is user.args[0]:
+            return True
+        if check_view_like_ops(user):
+            return is_node_escaped(user)
+    return False

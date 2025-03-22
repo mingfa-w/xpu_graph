@@ -35,6 +35,9 @@ class Pattern(Optimizer):
     def process(self, gm: fx.GraphModule):
         raise NotImplementedError
 
+    def __str__(self):
+        return f"{self.__class__.__name__}.{self._stage.name}"
+
 
 class PatternRule(object):
     def __init__(self, type_map: dict, links: dict, end_name: str):
