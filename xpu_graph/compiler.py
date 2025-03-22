@@ -9,7 +9,7 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 from .passes.pass_manager import PassManager
 from .passes.patterns.pattern import Pattern
 from .config import XpuGraphConfig, Target, OptLevel
-from .utils import logger, setup_logger
+from .utils import logger, setup_logger, local_logger
 from .cache import XpuGraphCache, default_cache
 from .fx_utils import FxStage, unlift_exported_gm
 import logging
@@ -99,9 +99,10 @@ class XpuGraph:
             ]
 
             with fake_mode:
-                logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
-                logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
-                logger.info(f"xpu_graph passes start {stage}...")
+                with local_logger("before"):
+                    logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
+                    logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
+                    logger.info(f"xpu_graph passes start {stage}...")
 
                 if stage == FxStage.pregrad:
                     logger.debug(f"before decompose: graph like:\n {gm.graph}")
@@ -128,11 +129,12 @@ class XpuGraph:
                 else:
                     xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
 
-                logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
-                logger.info("xpu_graph passes complete")
-                logger.info(
-                    f"after xpu_graph, nodes num: {len(xpu_compiled.graph.nodes)}"
-                )
+                with local_logger("after"):
+                    logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
+                    logger.info("xpu_graph passes complete")
+                    logger.info(
+                        f"after xpu_graph, nodes num: {len(xpu_compiled.graph.nodes)}"
+                    )
 
                 if stage == FxStage.pregrad:
                     return xpu_compiled
@@ -149,16 +151,24 @@ class XpuGraph:
                     )
 
             return xpu_compiled
+        
+        def _staged_compiler(stage: FxStage):
+            def wrapped(gm, sample_inputs):
+                with local_logger(stage.name):
+                    xpu_compiled = _compiler(gm, sample_inputs, stage)
+                return xpu_compiled
+            
+            return wrapped
 
         if self._config.is_training:
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
             #    and 2. aot_autograd traces grad again
             # It's okay use optimized infer-graph for training as well
-            pregrad_gm = _compiler(dynamo_gm, example_inputs, stage=FxStage.pregrad)
+            pregrad_gm = _staged_compiler(FxStage.pregrad)(dynamo_gm, example_inputs)
 
             xpu_gm = aot_autograd(
-                fw_compiler=partial(_compiler, stage=FxStage.forward),
-                bw_compiler=partial(_compiler, stage=FxStage.backward),
+                fw_compiler=_staged_compiler(FxStage.forward),
+                bw_compiler=_staged_compiler(FxStage.backward),
             )(pregrad_gm, example_inputs)
         else:
             logger.info("aot_export_module start...")
@@ -179,7 +189,7 @@ class XpuGraph:
             logger.info("unlift graph complete")
             logger.debug(f"after unlift, graph like:\n {unlifted_gm.graph}")
 
-            xpu_gm = _compiler(unlifted_gm, example_inputs, stage=FxStage.inference)
+            xpu_gm = _staged_compiler(FxStage.inference)(unlifted_gm, example_inputs)
 
         return xpu_gm
 
