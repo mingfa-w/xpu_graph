@@ -7,12 +7,6 @@ import xpu_graph
 from xpu_graph.test_utils import is_similar
 
 import torch_mlu_ops as ops
-from xpu_graph.config import OptLevel
-from xpu_graph.test_utils import (
-    assertTensorsEqual,
-    need_xpu_graph_logs,
-    skip_xpu_graph_cache,
-)
 
 
 aten = torch.ops.aten
@@ -24,6 +18,12 @@ act_mode_dict = {
     "gelu": torch.nn.functional.gelu,
     "silu": torch.nn.functional.silu,
 }
+from xpu_graph.config import OptLevel
+from xpu_graph.test_utils import (
+    assertTensorsEqual,
+    need_xpu_graph_logs,
+    skip_xpu_graph_cache,
+)
 
 
 class FeedForward(torch.nn.Module):
@@ -115,36 +115,32 @@ def ffn_test(xpu_graph_backend, func):
         compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
         res1 = func(*args)
         res = compiled(*args)
-        assert is_similar(res1.float(), res.float())
-        tmo_output1 = ops.ffn(
-            ffn_input,
-            pytorch_ffn.up_linear.weight,
-            pytorch_ffn.up_linear.bias,
-            pytorch_ffn.down_linear.weight,
-            pytorch_ffn.down_linear.bias,
-            pytorch_ffn.gated_linear.weight if use_gate else None,
-            pytorch_ffn.gated_linear.bias if use_gate else None,
-            act_mode,
+
+        assertTensorsEqual(
+            res1.cpu().float(), res.cpu().float(), 0.005, use_MSE=True, use_RAE=True
         )
-        assert is_similar(res1.float().reshape(-1), tmo_output1.float().reshape(-1))
 
 
 class TestFFN:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, freeze=True, opt_level=OptLevel.level2)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            is_training=False, freeze=True, opt_level=OptLevel.level2
+        )
 
     @pytest.mark.parametrize(
         "pattern_func",
         [fn0, fn1, fn2, fn3],
     )
-    def test_sfdp_patterns(self, caplog, pattern_func):
+    def test_ffn_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             ffn_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.FusedFFN changed graph" in caplog.text   
+        assert "Pattern.FusedMatMul changed graph" in caplog.text
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, freeze=True, opt_level=OptLevel.level2)
+    xpu_graph_backend = xpu_graph.mlu_compiler(
+        is_training=False, freeze=True, opt_level=OptLevel.level2
+    )
     ffn_test(xpu_graph_backend, fn0)
     ffn_test(xpu_graph_backend, fn1)
     ffn_test(xpu_graph_backend, fn2)

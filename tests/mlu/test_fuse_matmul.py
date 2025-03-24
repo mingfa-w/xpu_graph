@@ -173,11 +173,11 @@ class TestMatMul:
             fn19,
         ],
     )
-    
-    def test_sfdp_patterns(self, caplog, pattern_func):
+    def test_matmul_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             matmul_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedMatMul changed graph" in caplog.text
+
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(

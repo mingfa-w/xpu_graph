@@ -80,7 +80,9 @@ def rmsnorm_test(xpu_graph, func):
 
 class TestRMSNorm:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False,opt_level=OptLevel.level2)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            is_training=False, opt_level=OptLevel.level2
+        )
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -91,7 +93,7 @@ class TestRMSNorm:
             fn3,
         ],
     )
-    def test_sfdp_patterns(self, caplog, pattern_func):
+    def test_rmsnorm_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             rmsnorm_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedRMSNorm changed graph" in caplog.text

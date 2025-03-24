@@ -106,7 +106,7 @@ class TestLayerNorm:
         "pattern_func",
         [fn0, fn1],
     )
-    def test_sfdp_patterns(self, caplog, pattern_func):
+    def test_layernrom_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             layernorm_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedLayernormMM changed graph" in caplog.text

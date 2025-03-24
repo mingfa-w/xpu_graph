@@ -100,7 +100,7 @@ class TestSliceSumCat:
         "pattern_func",
         [fn0, fn1, fn2, fn3, fn4],
     )
-    def test_sfdp_patterns(self, caplog, pattern_func):
+    def test_slice_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             sumcat_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedCatSum changed graph" in caplog.text
