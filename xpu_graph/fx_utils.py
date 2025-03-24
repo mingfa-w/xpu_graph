@@ -19,10 +19,11 @@ class FxStage(Enum):
     backward = "backward"
 
 
-def unlift_gm(mod, gm, graph_signature):
+def unlift_exported_gm(mod, gm, graph_signature, freeze=True):
     """
-    Unlift a GraphModule by restoring parameters and buffers from the original module.
-
+    Unlift an exported gm to a STATEFUL graph module.
+    Apply mutations on the mutated outputs.
+    If freeze, unlift a GraphModule by restoring parameters and buffers from the original module.
     Args:
         mod: The original module containing parameters and buffers
         gm: The GraphModule to be unlifted
@@ -34,39 +35,52 @@ def unlift_gm(mod, gm, graph_signature):
     # Build state dictionary from parameters and buffers
     state_dict = {}
 
-    # Assign parameters to the graph module
-    for name, param in mod.named_parameters(remove_duplicate=False):
-        state_dict[name] = param
-        _assign_attr(param, gm, name, attr_kind=_AttrKind.PARAMETER)
+    if freeze:
+        # Assign parameters to the graph module
+        for name, param in mod.named_parameters(remove_duplicate=False):
+            state_dict[name] = param
+            _assign_attr(param, gm, name, attr_kind=_AttrKind.PARAMETER)
 
-    # Assign buffers to the graph module
-    for name, buffer in mod.named_buffers(remove_duplicate=False):
-        state_dict[name] = buffer
-        _assign_attr(buffer, gm, name, attr_kind=_AttrKind.BUFFER)
+        # Assign buffers to the graph module
+        for name, buffer in mod.named_buffers(remove_duplicate=False):
+            state_dict[name] = buffer
+            _assign_attr(buffer, gm, name, attr_kind=_AttrKind.BUFFER)
 
-    # Process placeholder nodes to identify lifted inputs
-    placeholder_nodes = [node for node in gm.graph.nodes if node.op == "placeholder"]
-    lifted_inputs = []
+        # Process placeholder nodes to identify lifted inputs
+        placeholder_nodes = [
+            node for node in gm.graph.nodes if node.op == "placeholder"
+        ]
+        lifted_inputs = []
 
-    for node in placeholder_nodes:
-        node_name = node.name
-        if node_name in graph_signature.inputs_to_parameters:
-            lifted_inputs.append(graph_signature.inputs_to_parameters[node_name])
-        elif node_name in graph_signature.inputs_to_buffers:
-            lifted_inputs.append(graph_signature.inputs_to_buffers[node_name])
-        else:
-            assert node_name in graph_signature.user_inputs
-            lifted_inputs.append(None)
+        for node in placeholder_nodes:
+            node_name = node.name
+            if node_name in graph_signature.inputs_to_parameters:
+                lifted_inputs.append(graph_signature.inputs_to_parameters[node_name])
+            elif node_name in graph_signature.inputs_to_buffers:
+                lifted_inputs.append(graph_signature.inputs_to_buffers[node_name])
+            else:
+                assert node_name in graph_signature.user_inputs
+                lifted_inputs.append(None)
+    else:
+        lifted_inputs = [None for node in gm.graph.nodes if node.op == "placeholder"]
 
     # Process outputs to identify mutated buffers
     outputs = list(gm.graph.nodes)[-1].args[0]
     mutated_outputs = []
+    buffer_mutations = graph_signature.buffers_to_mutate
+    user_input_mutations = graph_signature.user_inputs_to_mutate
+    output_tokens = graph_signature.output_tokens
 
-    for out in outputs:
-        if out in graph_signature.buffers_to_mutate:
-            mutated_outputs.append(graph_signature.buffers_to_mutate[out.name])
-        else:
-            mutated_outputs.append(None)
+    for idx, out in enumerate(outputs):
+        value = None
+        # user output can also be mutated inputs, so use idx to distinguish them
+        if idx < len(buffer_mutations) + len(user_input_mutations) + len(output_tokens):
+            if out.name in buffer_mutations:
+                value = buffer_mutations[out.name]
+            elif out.name in user_input_mutations:
+                value = user_input_mutations[out.name]
+
+        mutated_outputs.append(value)
 
     # Perform the actual unlifting
     unlifted_gm = _unlift(

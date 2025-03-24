@@ -179,8 +179,8 @@ def check_bmm_op(
 def check_mm_op(
     node: fx.Node,
 ) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
-    if check_op(node, torch.ops.aten.mm.default) or check_op(
-        node, torch.ops.aten.matmul.default
+    if check_op(node, torch.ops.aten.mm.default) or (
+        check_op(node, torch.ops.aten.matmul.default) and check_meta_2d(node)
     ):
         arg1 = node.args[0]
         arg2 = node.args[1]
@@ -298,3 +298,9 @@ def check_addmm_op(
     arg2 = get_input_node(node, 1)
     arg3 = get_input_node(node, 2)
     return True, arg1, arg2, arg3
+
+def check_where_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.where.self)
+
+def check_zeros_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.zeros.default)

@@ -1,9 +1,12 @@
 import torch
 import torch.fx as fx
-
+from torch import SymInt
+from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
 
 class ChangeTensorLike(Pattern):
+    _stages = [FxStage.inference, FxStage.pregrad]
+
     def process(self, gm: fx.GraphModule):
         changed = False
         tensor_like_map = {
@@ -13,8 +16,11 @@ class ChangeTensorLike(Pattern):
         candidates = [node for node in gm.graph.nodes if node.op == 'call_function' and node.target in tensor_like_map]
 
         for like in candidates:
-            changed = True
             inp = like.args[0]
+            if any([isinstance(s, SymInt) for s in like.meta['tensor_meta'].shape]):
+                # FIXME: use shape env to get the real shape
+                continue
+            changed = True
             with gm.graph.inserting_before(like):
                 tensor = gm.graph.call_function(
                     tensor_like_map[like.target],

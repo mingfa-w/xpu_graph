@@ -4,7 +4,6 @@ import operator
 import torch
 from torch import nn, fx
 import torch_mlu
-import torch_mlu_ops
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
@@ -14,7 +13,6 @@ from ...utils.check_ops import (
     check_view,
     check_getitem_op,
 )
-
 
 class FusedNormReplacement(nn.Module):
     def forward(
@@ -28,6 +26,7 @@ class FusedNormReplacement(nn.Module):
         store_output_before_norm,
         norm_type,
     ):
+        import torch_mlu_ops
         if bias is None:
             bias = torch.zeros_like(weight)
         dtype = torch.promote_types(input.dtype, residual.dtype)

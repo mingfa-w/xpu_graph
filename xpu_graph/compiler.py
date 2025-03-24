@@ -11,7 +11,7 @@ from .passes.patterns.pattern import Pattern
 from .config import XpuGraphConfig, Target, OptLevel
 from .utils import logger, setup_logger
 from .cache import XpuGraphCache, default_cache
-from .fx_utils import FxStage
+from .fx_utils import FxStage, unlift_exported_gm
 import logging
 from functools import partial
 
@@ -25,9 +25,12 @@ def optimize_graph(gm, sample_inputs, config=None):
             enable_cache=False,
             opt_level=OptLevel.level2,
         )
+    config._reset_config_with_env()
 
     # Setup logging based on config
     setup_logger(logging.DEBUG if config.debug else logging.INFO)
+
+    logger.info(f"{config}")
 
     # Create fake inputs for optimization
     fake_mode = FakeTensorMode()
@@ -58,17 +61,12 @@ class XpuGraph:
         config: XpuGraphConfig,
         cache: XpuGraphCache = None,
     ):
+        config._reset_config_with_env()
         self._config = config
         # Setup logging based on config
         setup_logger(logging.DEBUG if self._config.debug else logging.INFO)
 
-        if self._config.freeze and self._config.is_training == False:
-            # The configuration in this inductor affects the return value of is_parameter_freezing(),
-            # thereby influencing the process of generating the fx_graph in dynamo. The current code
-            # in the community is not very clean, and it would be more reasonable to place this
-            # configuration under dynamo. You can refer to this link for more information.
-            # https://github.com/pytorch/pytorch/blob/release/2.5/torch/_dynamo/utils.py#L3061
-            torch._inductor.config.freezing = True
+        logger.info(f"{config}")
 
         self._pass_manager = PassManager(self._config)
         self._cache = (
@@ -77,10 +75,10 @@ class XpuGraph:
             else default_cache() if config.enable_cache else None
         )
 
+        self._set_context()
+
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, sample_inputs, stage: FxStage):
-            if self._config.skip_all_pass:
-                return gm
 
             # Create fake inputs for optimization
             from torch._guards import detect_fake_mode
@@ -96,6 +94,20 @@ class XpuGraph:
                 logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
                 logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
                 logger.info(f"xpu_graph passes start {stage}...")
+
+                if stage == FxStage.pregrad:
+                    logger.debug(f"before decompose: graph like:\n {gm.graph}")
+                    logger.info("decompose graph start...")
+                    from torch.fx.experimental.proxy_tensor import make_fx
+
+                    gm = make_fx(
+                        gm,
+                        tracing_mode="fake",
+                        pre_dispatch=True,
+                        record_module_stack=True,
+                    )(*fake_inputs)
+                    logger.info("decompose graph complete")
+                    logger.debug(f"after decompose, graph like:\n {gm.graph}")
 
                 if self._config.enable_cache:
                     hashkey = self._cache.cache_key(
@@ -131,23 +143,10 @@ class XpuGraph:
             return xpu_compiled
 
         if self._config.is_training:
-            logger.debug(f"before dispatch: graph like:\n {dynamo_gm.graph}")
-            logger.info("dispatch graph start...")
-            from torch.fx.experimental.proxy_tensor import make_fx
-
-            dispatched_gm = make_fx(
-                dynamo_gm,
-                tracing_mode="fake",
-                pre_dispatch=True,
-                record_module_stack=True,
-            )(*example_inputs)
-            logger.info("dispatch graph complete")
-            logger.debug(f"after dispatch, graph like:\n {dispatched_gm.graph}")
-
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
             #    and 2. aot_autograd traces grad again
             # It's okay use optimized infer-graph for training as well
-            pregrad_gm = _compiler(dispatched_gm, example_inputs, stage=FxStage.pregrad)
+            pregrad_gm = _compiler(dynamo_gm, example_inputs, stage=FxStage.pregrad)
 
             xpu_gm = aot_autograd(
                 fw_compiler=partial(_compiler, stage=FxStage.forward),
@@ -155,18 +154,51 @@ class XpuGraph:
             )(pregrad_gm, example_inputs)
         else:
             logger.info("aot_export_module start...")
+            logger.debug(f"before aot_export_module, graph like:\n {dynamo_gm.graph}")
+
             exported_gm, gs = aot_export_module(
                 dynamo_gm, example_inputs, trace_joint=False
             )
-            logger.debug(f"before aot_export_module, graph like:\n {exported_gm.graph}")
-            if self._config.freeze:
-                from xpu_graph.fx_utils import unlift_gm
+            logger.info("aot_export_module complete")
+            logger.debug(f"after aot_export_module, graph like:\n {exported_gm.graph}")
+            logger.debug(f"graph signature: {gs}")
 
-                exported_gm = unlift_gm(dynamo_gm, exported_gm, gs)
-                logger.info("unlift graph complete")
-                logger.debug(f"after unlift, graph like:\n {exported_gm.graph}")
-            xpu_gm = _compiler(exported_gm, example_inputs, stage=FxStage.inference)
+            logger.info("unlift graph start...")
+            logger.debug(f"before unlift, graph like:\n {exported_gm.graph}")
+            unlifted_gm = unlift_exported_gm(
+                dynamo_gm, exported_gm, gs, freeze=self._config.freeze
+            )
+            logger.info("unlift graph complete")
+            logger.debug(f"after unlift, graph like:\n {unlifted_gm.graph}")
+
+            xpu_gm = _compiler(unlifted_gm, example_inputs, stage=FxStage.inference)
+
         return xpu_gm
 
     def get_pattern_manager(self):
         return self._pass_manager.get_pattern_manager()
+
+    def _set_context(self):
+        self._orig_ctx = {}
+        self._orig_ctx["torch._inductor.config.freezing"] = (
+            torch._inductor.config.freezing
+        )
+        if self._config.freeze and self._config.is_training == False:
+            # The configuration in this inductor affects the return value of is_parameter_freezing(),
+            # thereby influencing the process of generating the fx_graph in dynamo. The current code
+            # in the community is not very clean, and it would be more reasonable to place this
+            # configuration under dynamo. You can refer to this link for more information.
+            # https://github.com/pytorch/pytorch/blob/release/2.5/torch/_dynamo/utils.py#L3061
+            torch._inductor.config.freezing = True
+        else:
+            torch._inductor.config.freezing = False
+
+        if self._cache is not None:
+            self._orig_ctx["self._cache.orig_ctx"] = self._cache._set_cache_ctx()
+
+    def _restore_context(self):
+        torch._inductor.config.freezing = self._orig_ctx[
+            "torch._inductor.config.freezing"
+        ]
+        if self._cache is not None:
+            self._cache._restore_cache_ctx(self._orig_ctx["self._cache.orig_ctx"])

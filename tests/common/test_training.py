@@ -1,3 +1,5 @@
+import pytest
+
 import torch
 import torch.nn as nn
 import xpu_graph
@@ -15,6 +17,16 @@ class SimpleModel(nn.Module):
 
     def forward(self, x):
         return self.fc(x)
+
+
+class SliceCatModel(nn.Module):
+    def __init__(self, input_dim):
+        super(SliceCatModel, self).__init__()
+        self.fc = nn.Linear(input_dim, 16)
+
+    def forward(self, x):
+        x = self.fc(x)
+        return torch.cat([-x[..., 8:], x[..., :8]], 1).sum(dim=-1)
 
 
 def compare_training(ModCls, backend, nsteps=4, bsz=8, input_dim=16):
@@ -50,13 +62,25 @@ def compare_training(ModCls, backend, nsteps=4, bsz=8, input_dim=16):
             assert is_similar(p_golden, p_compiled)
 
 
-def test_training():
-    config = xpu_graph.XpuGraphConfig(
-        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=True
+class TestTraining:
+    def setup_class(self):
+        train_config = xpu_graph.XpuGraphConfig(
+            is_training=True, opt_level=OptLevel.level2, freeze=False
+        )
+        self.train_backend = xpu_graph.XpuGraph(train_config)
+
+    @pytest.mark.parametrize(
+        "ReproCls",
+        [SimpleModel, SliceCatModel],
     )
-    xpu_graph_backend = xpu_graph.XpuGraph(config)
-    compare_training(SimpleModel, xpu_graph_backend)
+    def test_layernrom_patterns_with_loss_and_grad(self, ReproCls):
+        compare_training(ReproCls, self.train_backend)
 
 
 if __name__ == "__main__":
-    test_training()
+    config = xpu_graph.XpuGraphConfig(
+        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=False
+    )
+    xpu_graph_backend = xpu_graph.XpuGraph(config)
+    compare_training(SimpleModel, xpu_graph_backend)
+    compare_training(SliceCatModel, xpu_graph_backend)

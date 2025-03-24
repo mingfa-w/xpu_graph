@@ -107,7 +107,9 @@ class TestSliceSumCat:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False,opt_level=OptLevel.level2)
+    xpu_graph_backend = xpu_graph.mlu_compiler(
+        is_training=False, opt_level=OptLevel.level2
+    )
     sumcat_test(xpu_graph_backend, fn0)
     sumcat_test(xpu_graph_backend, fn1)
     sumcat_test(xpu_graph_backend, fn2)
