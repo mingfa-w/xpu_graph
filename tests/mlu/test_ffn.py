@@ -125,7 +125,7 @@ def ffn_test(xpu_graph_backend, func):
 
 class TestFFN:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler()
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -136,8 +136,4 @@ class TestFFN:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler()
-    ffn_test(xpu_graph_backend, fn0)
-    ffn_test(xpu_graph_backend, fn1)
-    ffn_test(xpu_graph_backend, fn2)
-    ffn_test(xpu_graph_backend, fn3)
+    pytest.main()

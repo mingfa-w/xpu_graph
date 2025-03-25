@@ -4,7 +4,6 @@ from xpu_graph.passes.patterns.pattern import Pattern
 
 
 class FoldDetach(Pattern):
-
     def process(self, gm: fx.GraphModule):
         changed = False
         candidates = [

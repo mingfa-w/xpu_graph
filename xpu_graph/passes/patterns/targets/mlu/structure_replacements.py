@@ -1,6 +1,7 @@
 import torch
 import torch.fx as fx
 import torch_mlu
+import torch_mlu_ops
 
 from .triton_kernel.fused_slice import (
     fused_slice_low,
@@ -10,11 +11,18 @@ from .triton_kernel.fused_slice_cat import (
     fused_slice_cat,
 )
 
+
 class RMSNormModule(torch.nn.Module):
     def forward(self, inputs, weights, epsilon):
-        import torch_mlu_ops
         return torch_mlu_ops.fused_rms_norm(
             inputs, None, weights, None, None, epsilon, False
+        )
+
+
+class LayerNormModule(torch.nn.Module):
+    def forward(self, input, weight, bias, epsilon):
+        return torch.nn.functional.layer_norm(
+            input, input.shape[-1:], weight, bias, epsilon
         )
 
 
@@ -36,7 +44,7 @@ class FuseSliceModule(torch.nn.Module):
             input_tensor.shape[0],
             input_tensor.stride(0),
         )
-        return output.view(len(slices_index), input_tensor.shape[0], slice_len)
+        return output
 
 
 class FuseSliceCatSameInputModule(torch.nn.Module):
@@ -61,6 +69,7 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
 def get_structure_replacements():
     return {
         "FusedRMSNorm": RMSNormModule,
+        "FusedLayerNorm": LayerNormModule,
         "FusedSlice": FuseSliceModule,
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule,

@@ -5,7 +5,6 @@ import xpu_graph
 from xpu_graph.test_utils import is_similar
 from xpu_graph.config import OptLevel
 
-
 class RMSNorm1(torch.nn.Module):
     def __init__(self, hidden_size, eps=1e-6):
         super().__init__()
@@ -75,7 +74,7 @@ def rmsnorm_test(xpu_graph, func):
 
 class TestRMSNorm:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False)
+        self.xpu_graph_backend = xpu_graph.mlu_compiler()
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -91,9 +90,7 @@ class TestRMSNorm:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, opt_level=OptLevel.level2
-    )
+    xpu_graph_backend = xpu_graph.mlu_compiler(opt_level=OptLevel.level2)
     rmsnorm_test(xpu_graph_backend, fn0)
     rmsnorm_test(xpu_graph_backend, fn1)
     rmsnorm_test(xpu_graph_backend, fn2)

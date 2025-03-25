@@ -54,7 +54,7 @@ def bmm_test(xpu_graph_backend, func):
 class TestBMM:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, freeze=True, opt_level=OptLevel.level2
+            freeze=True, opt_level=OptLevel.level2
         )
 
     @pytest.mark.parametrize(
@@ -68,9 +68,7 @@ class TestBMM:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, freeze=True, opt_level=OptLevel.level2
-    )
+    xpu_graph_backend = xpu_graph.mlu_compiler(freeze=True, opt_level=OptLevel.level2)
     bmm_test(xpu_graph_backend, fn0)
     bmm_test(xpu_graph_backend, fn1)
     bmm_test(xpu_graph_backend, fn2)

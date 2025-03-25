@@ -7,20 +7,13 @@ from torch._dynamo.convert_frame import compile_lock
 from torch.utils._python_dispatch import _disable_current_modes
 from .config import XpuGraphConfig
 from .utils import logger
-from .fx_utils import FxStage
 
 """ A base cache class does not store any thing"""
 
 
 class XpuGraphCache:
-    def cache_key(
-        self,
-        gm: torch.fx.GraphModule,
-        fake_inputs,
-        config: XpuGraphConfig,
-        stage: FxStage,
-    ):
-        key = f"{gm}-{fake_inputs}-{config}-{stage}"
+    def cache_key(self, gm: torch.fx.GraphModule, fake_inputs, config: XpuGraphConfig):
+        key = f"{gm}-{fake_inputs}-{config}"
         logger.debug(f"Cache Key readable: \n{key}")
         hashkey = hashlib.md5(key.encode()).hexdigest()
         logger.info(f"Cache Key: {hashkey}")
@@ -39,6 +32,7 @@ class XpuGraphCache:
         return None
 
 
+# 以下是一个简单的内存缓存实现示例
 class XpuGraphLocalCache(XpuGraphCache):
     def __init__(self, cache_path: PathLike):
         super().__init__()
@@ -81,10 +75,6 @@ class XpuGraphLocalCache(XpuGraphCache):
         fname = f"xpu_graph_{key}.pt"
         artifact_cache = os.path.join(self._path, fname)
         return artifact_cache
-
-
-def no_cache():
-    return XpuGraphCache()
 
 
 def default_cache():

@@ -33,8 +33,7 @@ def get_all_patterns(config: XpuGraphConfig):
                 and pat._opt_level <= config.opt_level
             ):
                 if pat.__name__ in structure_preplacements:
-                    for stage in pat._stages:
-                        patterns[pat._pattern_group].append(pat(structure_preplacements[pat.__name__], stage))
+                    patterns[pat._pattern_group].append(pat(structure_preplacements[pat.__name__]))
 
     for group, group_patterns in patterns.items():
         logger.debug(f"xpu_graph enable builtin structure {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}")

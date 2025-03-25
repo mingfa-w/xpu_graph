@@ -9,7 +9,6 @@ from xpu_graph.utils import xpu_timer, logger
 
 opt_times = 0
 
-
 class Optimizer(ABC):
     _debug = False
     _dump_graph = False
@@ -19,22 +18,18 @@ class Optimizer(ABC):
     def process(self, gm: fx.GraphModule) -> bool:
         pass
 
-    # TODO(zhangjihang): Always close timer temporarily. Need a config to contral after.
-    # @xpu_timer
+    @xpu_timer
     def __call__(self, gm: fx.GraphModule) -> bool:
         changed = self.process(gm)
 
         if changed:
-            logger.debug(
-                f"{self.__class__.__bases__[0].__name__}.{self.__class__.__name__} changed graph"
-            )
+            logger.debug(f"{self.__class__.__bases__[0].__name__}.{self.__class__.__name__} changed graph")
+            print(f"{self.__class__.__bases__[0].__name__}.{self.__class__.__name__} changed graph")
 
         if changed and self._dump_graph:
             global opt_times
             graph = fx.passes.graph_drawer.FxGraphDrawer(gm, self.__class__.__name__)
-            graph.get_dot_graph().write_svg(
-                f"{opt_times}_{self.__class__.__name__}.svg"
-            )
+            graph.get_dot_graph().write_svg(f"{opt_times}_{self.__class__.__name__}.svg")
             opt_times += 1
 
         return changed

@@ -3,11 +3,13 @@ from typing import Optional
 import torch
 from torch import nn, fx
 import torch_mlu
+import torch_mlu_ops
 
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
 from xpu_graph.config import OptLevel
 from ...utils.check_ops import check_view
+
 
 class FusedFFNReplacement(nn.Module):
     def forward(
@@ -38,7 +40,6 @@ class FusedFFNReplacement(nn.Module):
 def _is_ffn(
     node: fx.Node,
 ) -> tuple[bool, Optional[fx.Node], Optional[fx.Node], Optional[fx.Node]]:
-    import torch_mlu_ops
     if (node.target != "mlu_tmo_fused_matmul_1_replacement") and (
         node.target != "mlu_tmo_fused_matmul_2_replacement"
     ):

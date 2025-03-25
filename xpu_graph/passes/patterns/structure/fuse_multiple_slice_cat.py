@@ -53,8 +53,7 @@ def fuse_multiple_cat(graph_module: fx.GraphModule):
 
 
 class FusedMultipleSliceCat(Pattern):
-    def __init__(self, target_mod: torch.nn.Module, *super_args):
-        super().__init__(*super_args)
+    def __init__(self, target_mod: torch.nn.Module):
         self.target_mod = target_mod
 
     def process(self, graph_module: fx.GraphModule):

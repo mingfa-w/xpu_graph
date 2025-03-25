@@ -1,11 +1,9 @@
 import torch
 import torch.fx as fx
-from xpu_graph.fx_utils import FxStage
+
 from xpu_graph.passes.patterns.pattern import AutoMatchPattern
 
 class Gelu(AutoMatchPattern):
-    _stages = [FxStage.inference, FxStage.pregrad]
-
     def rewriter(self, gm: fx.GraphModule, rule_name: str, node_map: dict) -> bool:
         assert len(node_map) == 5 or len(node_map) == 8
         if len(node_map) == 5:

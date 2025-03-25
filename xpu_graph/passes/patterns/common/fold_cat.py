@@ -1,13 +1,11 @@
 import torch
 import torch.fx as fx
-from xpu_graph.fx_utils import FxStage
+
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.passes.patterns.utils.check_ops import check_cat_op
 
 
 class FoldCat(Pattern):
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
-
     def process(self, gm: fx.GraphModule):
         changed = False
         candidates = [
@@ -31,8 +29,6 @@ class FoldCat(Pattern):
 
 
 class FoldCatCat(Pattern):
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
-
     def process(self, gm: fx.GraphModule):
         changed = False
         for node in reversed(gm.graph.nodes):
