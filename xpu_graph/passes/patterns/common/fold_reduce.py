@@ -12,7 +12,11 @@ class FoldReduce(Pattern):
 
         for reduce in candidates:
             inp = reduce.args[0]
-            dim = reduce.args[1][0]
+            # dims may be List[Int] or None.
+            dims = reduce.args[1]
+            if dims is None:
+                continue
+            dim = dims[0]
             if inp.meta['tensor_meta'].shape[dim] == 1:
                 changed = True
                 with gm.graph.inserting_before(reduce):
