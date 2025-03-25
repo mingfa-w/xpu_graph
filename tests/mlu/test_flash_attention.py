@@ -402,7 +402,7 @@ def fa_test(xpu_graph_backend, func):
 class TestFA:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, freeze=True, opt_level=OptLevel.level2
+            is_training=False, freeze=True, opt_level=OptLevel.level2, vendor_compiler_config=None
         )
 
     @pytest.mark.parametrize(
@@ -437,9 +437,10 @@ class TestFA:
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, freeze=True, opt_level=OptLevel.level2
+        is_training=False, freeze=False, debug=True, opt_level=OptLevel.level2, vendor_compiler_config=None
     )
     fa_test(xpu_graph_backend, _sfdp_pattern_1)
+    '''
     fa_test(xpu_graph_backend, _sfdp_pattern_1_1)
     fa_test(xpu_graph_backend, _sfdp_pattern_2)
     fa_test(xpu_graph_backend, _sfdp_pattern_3)
@@ -458,3 +459,4 @@ if __name__ == "__main__":
     fa_test(xpu_graph_backend, _sfdp_pattern_transformer_2)
     fa_test(xpu_graph_backend, _sfdp_pattern_transformer_3)
     fa_test(xpu_graph_backend, _sfdp_pattern_6_1)
+    '''
