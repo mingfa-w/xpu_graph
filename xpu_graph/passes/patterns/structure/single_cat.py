@@ -63,7 +63,6 @@ class SingleCatTwoDim(Pattern):
         is_modified = False
         changed = False
         candi_nodes = find_single_cat_nodes(graph_module)
-        print("wxue debug len candi_nodes = ", candi_nodes, len(candi_nodes))
         graph_module.add_submodule("single_cat_op", self.target_mod())
         for node in candi_nodes:
             # node is aten.cat
