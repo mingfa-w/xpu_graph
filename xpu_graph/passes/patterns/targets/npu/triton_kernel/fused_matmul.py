@@ -136,10 +136,11 @@ def mm_01(a_ptr, b_ptr, c_ptr,
     offs_k = tl.arange(0, BLOCK_K)
 
     a_ptrs = a_ptr + offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak
+    a_mask = offs_am[:, None] < M
     b_ptrs = b_ptr + offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn
     c_ptrs = c_ptr + offs_am[:, None] * stride_cm + offs_bn[None, :]
     c_mask = (offs_am[:, None] < M) & (offs_bn[None, :] < N)
-    a = tl.load(a_ptrs)
+    a = tl.load(a_ptrs, mask=a_mask)
     b = tl.load(b_ptrs)
 
     tl.store(c_ptrs, tl.dot(a, b), mask=c_mask)

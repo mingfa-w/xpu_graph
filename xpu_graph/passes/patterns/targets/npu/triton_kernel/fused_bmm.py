@@ -43,17 +43,16 @@ def npu_triton_bmm_splitM(
     offs_m = tl.arange(0, BLOCK_M)
     offs_n = tl.arange(0, BLOCK_N)
     offs_k = tl.arange(0, BLOCK_K)
-
     for bs in range(0, kernel_BS):
         b_ptrs = b_ptr + (pid * kernel_BS + bs) * stride_bb + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
         b = tl.load(b_ptrs)
-
         for im in range(0, M, BLOCK_M):
-            a_ptrs = a_ptr + (pid * kernel_BS + bs) * stride_ab + (im * BLOCK_M + offs_m[:, None]) * stride_am + offs_k[None, :] * stride_ak
-            a = tl.load(a_ptrs)
+            a_ptrs = a_ptr + (pid * kernel_BS + bs) * stride_ab + (im + offs_m[:, None]) * stride_am + offs_k[None, :] * stride_ak
+            a_mask = (im + offs_m[:, None]) < M
+            a = tl.load(a_ptrs, mask=a_mask)
             c = tl.dot(a, b)
-            c_ptrs = c_ptr + (pid * kernel_BS + bs) * stride_cb + (im * BLOCK_M + offs_m[:, None]) * stride_cm + offs_n[None, :] * stride_cn
-            c_mask = ((im * BLOCK_M + offs_m[:, None]) < M) & (offs_n[None, :] * stride_cn < N)
+            c_ptrs = c_ptr + (pid * kernel_BS + bs) * stride_cb + (im + offs_m[:, None]) * stride_cm + offs_n[None, :] * stride_cn
+            c_mask = ((im + offs_m[:, None]) < M) & (offs_n[None, :] < N)
             tl.store(c_ptrs, c, mask=c_mask)
 
 @triton.jit
@@ -78,11 +77,11 @@ def npu_triton_bmm_splitN(
         a_ptrs = a_ptr + (pid * kernel_BS + bs) * stride_ab + offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak
         a = tl.load(a_ptrs)
         for _in in range(0, N, BLOCK_N):
-            b_ptrs = b_ptr + (pid * kernel_BS + bs) * stride_bb + (offs_k[:, None]) * stride_bk + (_in * BLOCK_N + offs_n[None, :]) * stride_bn
+            b_ptrs = b_ptr + (pid * kernel_BS + bs) * stride_bb + (offs_k[:, None]) * stride_bk + (_in + offs_n[None, :]) * stride_bn
             b = tl.load(b_ptrs)
             c = tl.dot(a, b)
-            c_ptrs = c_ptr + (pid * kernel_BS + bs) * stride_cb + offs_m[:, None] * stride_cm + (_in * BLOCK_N + offs_n[None, :]) * stride_cn
-            c_mask = (offs_m[:, None] < M) & ((_in * BLOCK_N + offs_n[None, :]) * stride_cn < N)
+            c_ptrs = c_ptr + (pid * kernel_BS + bs) * stride_cb + offs_m[:, None] * stride_cm + (_in + offs_n[None, :]) * stride_cn
+            c_mask = (offs_m[:, None] < M) & ((_in + offs_n[None, :]) < N)
             tl.store(c_ptrs, c, mask=c_mask)
 
 def bmm_splitM(a, b, block_m, block_n, block_k):
