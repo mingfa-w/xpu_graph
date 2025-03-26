@@ -2,6 +2,7 @@ import torch
 
 from torch._dynamo.backends.common import aot_autograd
 from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.fx.experimental.proxy_tensor import make_fx
 
 from .passes.pass_manager import PassManager
 from .config import XpuGraphConfig, Target, OptLevel
@@ -102,6 +103,14 @@ class XpuGraph:
                     xpu_compiled = self._cache.load_gm(hashkey)
                     if xpu_compiled is None:
                         xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
+                        # Note: Currently, we only inline modules with a E2E make_fx, just for serialize / desrialize
+                        pre_dispatch = stage == FxStage.pregrad
+                        xpu_compiled = make_fx(
+                            xpu_compiled,
+                            tracing_mode="fake",
+                            pre_dispatch=pre_dispatch,
+                            record_module_stack=True,
+                        )(*fake_inputs)
                         xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
                 else:
                     xpu_compiled = self._pass_manager(gm, fake_inputs, stage)

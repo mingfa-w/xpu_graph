@@ -42,21 +42,17 @@ class PassManager:
             from torch.fx.passes.shape_prop import ShapeProp
 
             ShapeProp(gm).propagate(*example_inputs)
+
+            from torch.fx.passes.fake_tensor_prop import FakeTensorProp
+            from torch._guards import active_fake_mode
+
+            FakeTensorProp(gm, active_fake_mode()).propagate(*example_inputs)
+
             changed = False
             for pass_ in self._passes:
                 changed = changed or pass_(gm)
 
         gm.recompile()
-
-        if self.config.enable_cache:
-            # Note: Currently, we only inline modules with a E2E make_fx, just for serialize / desrialize
-            from torch.fx.experimental.proxy_tensor import make_fx
-
-            pre_dispatch = stage == FxStage.pregrad
-            gm = make_fx(gm, pre_dispatch=pre_dispatch, record_module_stack=True)(
-                *example_inputs
-            )
-
         return gm
 
     def get_pattern_manager(self):
