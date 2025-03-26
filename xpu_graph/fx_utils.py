@@ -119,7 +119,7 @@ class _FunctionalizeProxyTorchMode(ProxyTorchDispatchMode):
         return super().__torch_dispatch__(func, types, args, kwargs)
 
 
-def decompose_fx(gm, is_training, *args):
+def decompose_fx(gm, args, is_training, functionalize):
     """
     A modified version of make_fx
     1. decompose graph ops into aten ir
@@ -153,10 +153,17 @@ def decompose_fx(gm, is_training, *args):
     # We also disable tracing by any other tensor proxy-based tracers except the current. The
     # purpose of `make_fx` is to produce graphmodules as a side effect; its internal execution is
     # thus irrelevant to any external functional trace.
-    proxy_mode = _FunctionalizeProxyTorchMode(
-        fx_tracer,
-        pre_dispatch=is_training,
-    )
+    if functionalize:
+        proxy_mode = _FunctionalizeProxyTorchMode(
+            fx_tracer,
+            pre_dispatch=is_training,
+        )
+    else:
+        proxy_mode = ProxyTorchDispatchMode(
+            fx_tracer,
+            "fake",
+            pre_dispatch=is_training,
+        )
     if is_training:
         proxy_function_mode = PreDispatchTorchFunctionMode(fx_tracer)
         # pre-autograd tracing uses per-dispatch-key modes,
@@ -183,26 +190,27 @@ def decompose_fx(gm, is_training, *args):
             concrete_args=tuple(phs),
         )
         output_node = t.graph.find_nodes(op="output")[0]
-        mutated = {}
-        with fx_tracer.graph.inserting_before(output_node):
-            # Note: the iteration order of mem_ssa_versions matters
-            for old_tensor, new_tensor in proxy_mode.mem_snapshot.items():
-                old_node = get_proxy_slot(old_tensor, fx_tracer).proxy
-                new_node = get_proxy_slot(new_tensor, fx_tracer).proxy
-                from xpu_graph.passes.patterns.utils.check_ops import is_node_escaped
+        if functionalize:
+            mutated = {}
+            with fx_tracer.graph.inserting_before(output_node):
+                # Note: the iteration order of mem_ssa_versions matters
+                for old_tensor, new_tensor in proxy_mode.mem_snapshot.items():
+                    old_node = get_proxy_slot(old_tensor, fx_tracer).proxy
+                    new_node = get_proxy_slot(new_tensor, fx_tracer).proxy
+                    from xpu_graph.passes.patterns.utils.check_ops import is_node_escaped
 
-                if True:  # is_node_escaped(old_node.node):
-                    # Note: mem_snapshot always maps a originally-existing tensor (inplace base) to a newly-created tensor (outplace result)
-                    ret_node = fx_tracer.create_proxy(
-                        "call_function",
-                        aten.copy_.default,
-                        args=(old_node, new_node),
-                        kwargs={},
-                    )
-                    mutated[old_node.node] = ret_node.node
-        output_node.args = (
-            map_aggregate(output_node.args[0], lambda n: mutated.get(n, n)),
-        )
+                    if True:  # is_node_escaped(old_node.node):
+                        # Note: mem_snapshot always maps a originally-existing tensor (inplace base) to a newly-created tensor (outplace result)
+                        ret_node = fx_tracer.create_proxy(
+                            "call_function",
+                            aten.copy_.default,
+                            args=(old_node, new_node),
+                            kwargs={},
+                        )
+                        mutated[old_node.node] = ret_node.node
+            output_node.args = (
+                map_aggregate(output_node.args[0], lambda n: mutated.get(n, n)),
+            )
 
     t.recompile()
     return t

@@ -103,14 +103,14 @@ class XpuGraph:
                     xpu_compiled = self._cache.load_gm(hashkey)
                     if xpu_compiled is None:
                         xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
-                        # Note: Currently, we only inline modules with a E2E make_fx, just for serialize / desrialize
-                        pre_dispatch = stage == FxStage.pregrad
-                        xpu_compiled = make_fx(
+
+                        xpu_compiled = decompose_fx(
                             xpu_compiled,
-                            tracing_mode="fake",
-                            pre_dispatch=pre_dispatch,
-                            record_module_stack=True,
-                        )(*fake_inputs)
+                            fake_inputs,
+                            is_training=(stage == FxStage.pregrad),
+                            functionalize=False,
+                        )
+
                         xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
                 else:
                     xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
@@ -156,7 +156,9 @@ class XpuGraph:
                 fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
                 for x in example_inputs
             ]
-            decomposed = decompose_fx(dynamo_gm, self._config.is_training, *fake_inputs)
+            decomposed = decompose_fx(
+                dynamo_gm, fake_inputs, self._config.is_training, functionalize=True
+            )
             logger.info("decomposition complete")
             logger.debug(f"after decomposition, graph like:\n {decomposed.graph}")
 
