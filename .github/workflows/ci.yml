@@ -29,7 +29,7 @@ jobs:
     needs: [clone-code]
     runs-on: self-hosted
     container:
-      image: hub.byted.org/tritonx/mlu-devel-ubuntu20.04:0.0.0
+      image: hub.byted.org/base/data.aml.mlu-th25-base:e66140762a9b0800e95d99a5bea7430d
       volumes:
         - /data01/wangmingfa/mlu-ci:/host
         - /tmp/.X11-unix:/tmp/.X11-unix
