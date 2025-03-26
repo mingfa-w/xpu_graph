@@ -1,7 +1,7 @@
 import torch
 import torch.utils._pytree as pytree
 from torch.export.unflatten import _assign_attr, _AttrKind
-from torch.export._unlift import _unlift
+from torch.export._unlift import _unlift_inputs_as_getattr, _insert_copy_for_mutations
 
 
 from torch.fx import map_arg
@@ -33,17 +33,14 @@ def unlift_exported_gm(mod, gm, graph_signature, freeze=True):
         The unlifted GraphModule
     """
     # Build state dictionary from parameters and buffers
-    state_dict = {}
 
     if freeze:
         # Assign parameters to the graph module
         for name, param in mod.named_parameters(remove_duplicate=False):
-            state_dict[name] = param
             _assign_attr(param, gm, name, attr_kind=_AttrKind.PARAMETER)
 
         # Assign buffers to the graph module
         for name, buffer in mod.named_buffers(remove_duplicate=False):
-            state_dict[name] = buffer
             _assign_attr(buffer, gm, name, attr_kind=_AttrKind.BUFFER)
 
         # Process placeholder nodes to identify lifted inputs
@@ -64,6 +61,11 @@ def unlift_exported_gm(mod, gm, graph_signature, freeze=True):
     else:
         lifted_inputs = [None for node in gm.graph.nodes if node.op == "placeholder"]
 
+    # Unlift inputs as getattr nodes
+    unlifted_name_to_node, input_name_to_node = _unlift_inputs_as_getattr(
+        gm, lifted_inputs
+    )
+
     # Process outputs to identify mutated buffers
     outputs = list(gm.graph.nodes)[-1].args[0]
     mutated_outputs = []
@@ -82,17 +84,15 @@ def unlift_exported_gm(mod, gm, graph_signature, freeze=True):
 
         mutated_outputs.append(value)
 
-    # Perform the actual unlifting
-    unlifted_gm = _unlift(
-        gm,
-        lifted_inputs,
-        mutated_outputs,
-        pytree.LeafSpec(),
-        None,
-        state_dict,
-        {},
+    # Insert copy nodes for mutated outputs
+    _insert_copy_for_mutations(
+        gm, mutated_outputs, unlifted_name_to_node, input_name_to_node
     )
-    return unlifted_gm
+    
+    gm.graph.lint()
+    gm.recompile()
+
+    return gm
 
 
 def trace_and_inline(
