@@ -6,6 +6,7 @@ import torch_mlu
 from xpu_graph.utils import logger
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.fx_utils import FxStage
 from ...utils.check_ops import (
     get_shape,
 )
@@ -21,6 +22,7 @@ NodeType = fx.Node
 """
 class FusedGatherToCopy(Pattern):
     _opt_level = OptLevel.level1
+    _stages = [FxStage.inference, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
