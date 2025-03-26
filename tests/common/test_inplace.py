@@ -53,11 +53,31 @@ def fn5(indices, values):
 
 def fn6(indices, values):
     values1 = values.add(1)
-    values2 = values.clone()
+    values2 = values1.clone()
     values2.copy_(values1)
     values1.add_(2)
-    values3 = values2 + values1
+    values3 = values1.clone()
     return values1, values2, values3
+
+def fn7(indices, values):
+    values1 = values.add(1)
+    values2 = values1.clone()
+    values1.add_(1)
+    values3 = values1.clone()
+    values1.add_(1)
+    return values1, values2, values3
+
+def fn8(indices, values):
+    values1 = values.clone()
+    values1.add_(1)
+    values2 = values1.view(-1, 1)
+    values1.add_(1)
+    return values1, values2
+
+def fn9(indices, values):
+    values1 = values[3:7]
+    values.add_(1)
+    return values1
 
 
 def inplace_test(xpu_graph, func):
@@ -100,3 +120,6 @@ if __name__ == "__main__":
     inplace_test(infer_backend, fn4)
     inplace_test(infer_backend, fn5)
     inplace_test(infer_backend, fn6)
+    inplace_test(infer_backend, fn7)
+    inplace_test(infer_backend, fn8)
+    inplace_test(infer_backend, fn9)

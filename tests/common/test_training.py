@@ -29,9 +29,9 @@ class SliceCatModel(nn.Module):
         return torch.cat([-x[..., 8:], x[..., :8]], 1).sum(dim=-1)
 
 
-class InplcaeModel(nn.Module):
+class InplaceModel(nn.Module):
     def __init__(self, input_dim):
-        super(InplcaeModel, self).__init__()
+        super(InplaceModel, self).__init__()
         self.fc = nn.Linear(input_dim, 16)
 
     def forward(self, x):
@@ -102,7 +102,7 @@ class TestTraining:
 
     @pytest.mark.parametrize(
         "ReproCls",
-        [SimpleModel, SliceCatModel, InplcaeModel, ConstantInplaceModel],
+        [SimpleModel, SliceCatModel, InplaceModel, ConstantInplaceModel],
     )
     def test_layernrom_patterns_with_loss_and_grad(self, ReproCls):
         compare_training(ReproCls, self.train_backend)
@@ -115,5 +115,5 @@ if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     compare_training(SimpleModel, xpu_graph_backend)
     compare_training(SliceCatModel, xpu_graph_backend)
-    compare_training(InplcaeModel, xpu_graph_backend)
+    compare_training(InplaceModel, xpu_graph_backend)
     compare_training(ConstantInplaceModel, xpu_graph_backend)

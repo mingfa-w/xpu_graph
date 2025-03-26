@@ -1,15 +1,13 @@
 import torch
 
 from torch._dynamo.backends.common import aot_autograd
-from torch._functorch.aot_autograd import aot_export_module
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .passes.pass_manager import PassManager
-from .passes.patterns.pattern import Pattern
 from .config import XpuGraphConfig, Target, OptLevel
 from .utils import logger, setup_logger, local_logger
 from .cache import XpuGraphCache, default_cache
-from .fx_utils import FxStage
+from .fx_utils import FxStage, decompose_fx
 import logging
 
 
@@ -142,7 +140,6 @@ class XpuGraph:
         with local_logger("preprocess"):
             logger.info("decomposition start...")
             logger.debug(f"before decomposition, graph like:\n {dynamo_gm.graph}")
-            from .fx_utils import decompose_fx
 
             fake_mode = torch._guards.detect_fake_mode(example_inputs)
             fake_mode.allow_non_fake_inputs = True
@@ -150,9 +147,7 @@ class XpuGraph:
                 fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
                 for x in example_inputs
             ]
-            decomposed = decompose_fx(
-                dynamo_gm, self._config.is_training, *fake_inputs
-            )
+            decomposed = decompose_fx(dynamo_gm, self._config.is_training, *fake_inputs)
             logger.info("decomposition complete")
             logger.debug(f"after decomposition, graph like:\n {decomposed.graph}")
 

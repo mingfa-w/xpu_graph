@@ -5,6 +5,7 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
     wrapper_and_args_for_make_fx,
     get_proxy_slot,
+    set_original_aten_op,
 )
 from torch.fx.proxy import Proxy, GraphAppendingTracer
 
@@ -94,7 +95,6 @@ class _FunctionalizeProxyTorchMode(ProxyTorchDispatchMode):
         args: Tuple[object, ...] = (),
         kwargs: Optional[Dict[str, object]] = None,
     ):
-        from torch.fx.experimental.proxy_tensor import set_original_aten_op
 
         if func in inplace_decompositions:
             with set_original_aten_op(func):
@@ -111,8 +111,10 @@ class _FunctionalizeProxyTorchMode(ProxyTorchDispatchMode):
             logger.warn(
                 f"Unsupported mutable op {func}. This may leads to incorrect results!. File a issue to us if you really needs this operator."
             )
-
-        args = map_aggregate(args, self.get_snapeshot)
+        if func.is_view:
+            args = (args[0], *map_aggregate(args[1:], self.get_snapeshot))
+        else:
+            args = map_aggregate(args, self.get_snapeshot)
         kwargs = map_aggregate(kwargs, self.get_snapeshot)
         return super().__torch_dispatch__(func, types, args, kwargs)
 
@@ -189,7 +191,7 @@ def decompose_fx(gm, is_training, *args):
                 new_node = get_proxy_slot(new_tensor, fx_tracer).proxy
                 from xpu_graph.passes.patterns.utils.check_ops import is_node_escaped
 
-                if is_node_escaped(old_node.node):
+                if True:  # is_node_escaped(old_node.node):
                     # Note: mem_snapshot always maps a originally-existing tensor (inplace base) to a newly-created tensor (outplace result)
                     ret_node = fx_tracer.create_proxy(
                         "call_function",
