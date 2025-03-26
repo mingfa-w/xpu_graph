@@ -316,6 +316,7 @@ def check_view_like_ops(node: fx.node) -> bool:
         torch.ops.aten.squeeze.dim,
         torch.ops.aten.squeeze.dims,
         torch.ops.aten.unsqueeze.default,
+        torch.ops.aten.alias.default,
     )
     return _is_valid_node(node) and node.target in _view_like_ops
 
