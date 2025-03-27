@@ -48,4 +48,6 @@ def mlu_compiler(
         debug=debug,
         vendor_compiler_config=vendor_compiler_config,
     )
+    if not is_training:
+        import torch_mlu_ops
     return XpuGraph(config, cache)
