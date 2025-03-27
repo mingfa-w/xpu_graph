@@ -323,21 +323,3 @@ def check_view_like_ops(node: fx.node) -> bool:
 
 def check_inplace_copy_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.copy_.default)
-
-
-def is_node_escaped(node: fx.node) -> bool:
-    if not isinstance(node, fx.Node):
-        return False
-    src = node
-    while check_view_like_ops(src):
-        src = src.args[0]
-    if src.op == "getattr" or src.op == "placeholder":
-        return True
-    for user in node.users:
-        if user.op == "output":
-            return True
-        if check_inplace_copy_op(user) and node is user.args[0]:
-            return True
-        if check_view_like_ops(user):
-            return is_node_escaped(user)
-    return False

@@ -197,9 +197,8 @@ def decompose_fx(gm, args, is_training, functionalize):
                 for old_tensor, new_tensor in proxy_mode.mem_snapshot.items():
                     old_node = get_proxy_slot(old_tensor, fx_tracer).proxy
                     new_node = get_proxy_slot(new_tensor, fx_tracer).proxy
-                    from xpu_graph.passes.patterns.utils.check_ops import is_node_escaped
 
-                    if True:  # is_node_escaped(old_node.node):
+                    if is_node_escaped(old_node.node):
                         # Note: mem_snapshot always maps a originally-existing tensor (inplace base) to a newly-created tensor (outplace result)
                         ret_node = fx_tracer.create_proxy(
                             "call_function",
@@ -214,6 +213,44 @@ def decompose_fx(gm, args, is_training, functionalize):
 
     t.recompile()
     return t
+
+
+def is_node_escaped(node: torch.fx.Node) -> bool:
+    worklist = [node]
+    seen = set()
+    while len(worklist) > 0:
+        node = worklist.pop()
+        seen.add(node)
+
+        if node.op == "get_attr" or node.op == "placeholder":
+            return True
+        elif node.op == "call_function":
+            if not isinstance(node.target, OpOverload):
+                return True
+            elif node.target.is_view:
+                orig_view = node.args[0]
+                if orig_view not in seen:
+                    worklist.append(orig_view)
+        elif node.op == "call_method" or node.op == "call_module":
+            return True
+
+        for user in node.users:
+            if user.op == "output":
+                return True
+            elif user.op == "call_function":
+                if not isinstance(user.target, OpOverload):
+                    return True
+                elif user.target.is_view and node == user.args[0]:
+                    if user not in seen:
+                        worklist.append(user)
+                elif (
+                    user.target == torch.ops.aten.copy_.default and node == user.args[0]
+                ):
+                    return True
+            elif user.op == "call_method" or user.op == "call_module":
+                return True
+
+    return False
 
 
 inplace_decompositions = {}

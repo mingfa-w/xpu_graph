@@ -1,8 +1,7 @@
 import torch
 import torch.fx as fx
-from xpu_graph.fx_utils import FxStage
+from xpu_graph.fx_utils import FxStage, is_node_escaped
 from xpu_graph.passes.patterns.pattern import Pattern
-from xpu_graph.passes.patterns.utils.check_ops import is_node_escaped
 
 
 class FoldClone(Pattern):

@@ -79,6 +79,11 @@ def fn9(indices, values):
     values.add_(1)
     return values1
 
+def fn10(indices, values):
+    values1 = values[3:7]
+    values1.add_(1)
+    return values1
+
 
 def inplace_test(xpu_graph, func):
     indices = torch.tensor([7, 6, 5, 4, 0, 1, 2, 3], dtype=torch.int64, device=device)
@@ -123,3 +128,4 @@ if __name__ == "__main__":
     inplace_test(infer_backend, fn7)
     inplace_test(infer_backend, fn8)
     inplace_test(infer_backend, fn9)
+    inplace_test(infer_backend, fn10)
