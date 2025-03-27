@@ -120,6 +120,12 @@ def check_meta_2d(node: fx.Node) -> bool:
         return True
     return False
 
+def check_meta_3d(node: fx.Node) -> bool:
+    if not check_meta(node):
+        return False
+    if len(node.meta["tensor_meta"].shape) == 3:
+        return True
+    return False
 
 def get_shape(node: fx.Node):
     return node.meta["tensor_meta"].shape
@@ -168,13 +174,13 @@ def check_div_or_mul_op(
 def check_bmm_op(
     node: fx.Node,
 ) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
-    if not check_op(node, torch.ops.aten.bmm.default):
-        return False, None, None
-
-    arg1 = get_input_node(node, 0)
-    arg2 = get_input_node(node, 1)
-    return True, arg1, arg2
-
+    if check_op(node, torch.ops.aten.bmm.default) or(
+        check_op(node, torch.ops.aten.matmul.default) and check_meta_3d(node)
+    ):
+        arg1 = node.args[0]
+        arg2 = node.args[1]
+        return True, arg1, arg2
+    return False, None, None
 
 def check_mm_op(
     node: fx.Node,
@@ -304,3 +310,9 @@ def check_where_op(node: fx.node) -> bool:
 
 def check_zeros_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.zeros.default)
+
+def check_ones_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.ones.default)
+
+def check_full_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.full.default) or check_op(node, torch.ops.aten.full_like.default)
