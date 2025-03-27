@@ -21,12 +21,20 @@ def is_2d_tensor_meet_ub(node_inpus, dtype_bytes):
         shape = inp.meta["tensor_meta"].shape
         if len(shape) != 2:
             return False
-        if sum_size * dtype_bytes > 163840:
+        if dtype_bytes == 0 or sum_size * dtype_bytes > 163840:
         # triton load all cat tensor args into memory (160 kb = 131072bytes), set by developer
             return False
         sum_size += (shape[0] * shape[1])
     return True
 
+def get_dtype_byte(tensor_meta):
+    if (tensor_meta.dtype == torch.float16):
+        return 2
+    elif (tensor_meta.dtype == torch.float32):
+        return 4
+    else:
+        # unsupport
+        return 0
 
 def find_single_cat_nodes(graph_module):
     candi_nodes = []
@@ -43,11 +51,10 @@ def find_single_cat_nodes(graph_module):
             if len(inps) < 4 or len(inps) == 6 or len(inps) > 12:
             # len 6 have nan data input
                 continue
-            elif cat_axis == 0:
+            if cat_axis == 0:
             # only concat dim=1
                 continue
-            if (inps[0].meta["tensor_meta"].dtype == torch.float16):
-                dtype_bytes = 2
+            dtype_bytes = get_dtype_byte(inps[0].meta["tensor_meta"])
             if is_2d_tensor_meet_ub(inps, dtype_bytes):
                 candi_nodes.append(node)
     return candi_nodes
@@ -63,7 +70,6 @@ class SingleCatTwoDim(Pattern):
         is_modified = False
         changed = False
         candi_nodes = find_single_cat_nodes(graph_module)
-        print("wxue debug len candi_nodes = ", candi_nodes, len(candi_nodes))
         graph_module.add_submodule("single_cat_op", self.target_mod())
         for node in candi_nodes:
             # node is aten.cat
