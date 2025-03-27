@@ -5,9 +5,6 @@ on:
       - master
     types: [opened, synchronize, reopened]
   workflow_dispatch:
-concurrency:
-  group: ci-xpu-graph
-  cancel-in-progress: false
 defaults:
   run:
     shell: bash
@@ -19,11 +16,9 @@ jobs:
         run: |
           cd /data01/wangmingfa/mlu-ci
           sudo rm -rf xpu_graph
-          git clone https://github.com/BD-Seed-HHW/xpu_graph.git
+          if [ ! -d xpu_graph ] ; then git clone https://github.com/BD-Seed-HHW/xpu_graph ; fi
           cd xpu_graph
           git fetch origin pull/${{ github.event.pull_request.number }}/merge:pull/${{ github.event.pull_request.number }}
-          git checkout pull/${{ github.event.pull_request.number }}
-          echo "Checked out commit SHA: $(git rev-parse HEAD)"
   run-tests:
     name: Run xpu_graph tests
     needs: [clone-code]
@@ -40,7 +35,10 @@ jobs:
       - name: Running mlu tests
         shell: bash
         run: |
-          cd /host/xpu_graph
+          cp /host/xpu_graph ~/xpu_graph -r
+          cd ~/xpu_graph
+          git checkout pull/${{ github.event.pull_request.number }}
+          echo "Checked out commit SHA: $(git rev-parse HEAD)"
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/neuware/lib64
           pip install --root-user-action=ignore -e .
           export MLU_VISIBLE_DEVICES=6,7
