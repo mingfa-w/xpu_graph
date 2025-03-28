@@ -19,14 +19,21 @@ def sum_bool_replacement(x0):
 def sum_bool_pattern(x0):
     return torch.ops.aten.sum.dim_IntList(x0, None)
 
-def sum_bool_pass(graph):
-    custom_patterns = PatternMatcherPass()
-    x = torch.empty((86, 128))
+custom_patterns = PatternMatcherPass()
+
+def _register_pattern_once():
+    if hasattr(_register_pattern_once, "registered"):
+        return
+    x = torch.empty((86, 128)).bool().npu()
     register_replacement(sum_bool_pattern, 
-                         sum_bool_replacement, 
-                         [x], 
-                         fwd_only,
-                         [custom_patterns],
-                         extra_check=is_valid_sum_bool,
-                         )
+                        sum_bool_replacement,
+                        [x],
+                        fwd_only,
+                        [custom_patterns],
+                        extra_check=is_valid_sum_bool,
+                        )
+    setattr(_register_pattern_once, "registered", 1)
+
+def sum_bool_pass(graph):
+    _register_pattern_once()
     custom_patterns.apply(graph)
