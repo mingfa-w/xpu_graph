@@ -56,12 +56,12 @@ def layernorm_test(xpu_graph, func):
     if func == fn0 or func == fn2:
         norm = compiled(inputs, residual, weight, bias)
         norm1 = func(inputs, residual, weight, bias)
-        assert is_similar(norm1, norm)
+        assert is_similar(norm1.cpu(), norm.cpu())
     if func == fn1:
         norm, res = compiled(inputs, residual, weight, bias)
         norm1, res1 = func(inputs, residual, weight, bias)
-        assert is_similar(norm1, norm)
-        assert is_similar(res1, res)
+        assert is_similar(norm1.cpu(), norm.cpu())
+        assert is_similar(res1.cpu(), res.cpu())
 
 
 class TestLayerNorm:

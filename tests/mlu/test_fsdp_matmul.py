@@ -32,11 +32,11 @@ def train(rank, world_size, do_compile, return_queue, model_path):
             optimizer.step()
 
             if batch_idx % 10 == 0 and rank == 0:
-                print(f"Epoch [{epoch}], Batch [{batch_idx}], Loss: {loss.item():.4f}")
+                print(f"Epoch [{epoch}], Batch [{batch_idx}], Loss: {loss.cpu().item():.4f}")
 
             final_loss = loss
 
-    return_queue.put((rank, final_loss.item()))
+    return_queue.put((rank, final_loss.cpu().item()))
     cleanup()
 
 
