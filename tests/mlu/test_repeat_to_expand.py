@@ -6,7 +6,6 @@ import xpu_graph
 
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import (
-    assertTensorsEqual,
     need_xpu_graph_logs,
     skip_xpu_graph_cache,
 )
@@ -28,9 +27,7 @@ def gather_test(xpu_graph_backend, func):
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res = compiled(input, 46, batch, in_dim)
 
-    assertTensorsEqual(
-        res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True
-    )
+    assert torch.equal(res.cpu().float(), res1.cpu().float())
 
 
 class TestGather:

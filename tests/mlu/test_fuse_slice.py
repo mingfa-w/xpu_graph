@@ -4,7 +4,11 @@ import torch
 import torch_mlu
 import xpu_graph
 from xpu_graph import OptLevel
-from xpu_graph.test_utils import is_similar
+from xpu_graph.test_utils import (
+    need_xpu_graph_logs,
+    skip_xpu_graph_cache,
+)
+
 
 device = "mlu:0"
 aten = torch.ops.aten
@@ -443,13 +447,13 @@ def slice_test(xpu_graph_backend, func):
         compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
         res = compiled(a)[0]
         res1 = func(a)[0]
-        assert is_similar(res1.float(), res.float())
+        assert torch.equal(res.cpu().float(), res1.cpu().float())
 
 
-class TestSlice:
+class TestCatSlice:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, freeze=True, opt_level=OptLevel.level2
+            is_training=False, freeze=True, opt_level=OptLevel.level1
         )
 
     @pytest.mark.parametrize(
@@ -466,19 +470,38 @@ class TestSlice:
             fn9,
             fn10,
             fn11,
+        ],
+    )
+    def test_slice_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            slice_test(self.xpu_graph_backend, pattern_func)
+        assert "Pattern.FusedCatSlice changed graph" in caplog.text
+
+
+class TestSlice:
+    def setup_class(self):
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            is_training=False, freeze=True, opt_level=OptLevel.level1
+        )
+
+    @pytest.mark.parametrize(
+        "pattern_func",
+        [
             fn12,
             fn13,
             fn14,
             fn15,
         ],
     )
-    def test_slice_patterns(self, pattern_func):
-        slice_test(self.xpu_graph_backend, pattern_func)
+    def test_slice_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            slice_test(self.xpu_graph_backend, pattern_func)
+        assert "Pattern.FusedSlice changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, freeze=True, opt_level=OptLevel.level2
+        is_training=False, freeze=True, opt_level=OptLevel.level1
     )
     slice_test(xpu_graph_backend, fn0)
     slice_test(xpu_graph_backend, fn1)
