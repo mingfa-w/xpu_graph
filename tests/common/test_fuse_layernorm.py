@@ -3,7 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from xpu_graph.config import OptLevel
 import xpu_graph
-from xpu_graph.test_utils import is_similar, maybe_similar
+from xpu_graph.test_utils import (
+    is_similar,
+    maybe_similar,
+    need_xpu_graph_logs,
+    skip_xpu_graph_cache,
+)
 import pytest
 
 device = "cpu"
@@ -117,15 +122,19 @@ class TestLayerNorm:
         "pattern_func",
         [fn0, fn1, fn2, fn3],
     )
-    def test_layernrom_patterns(self, pattern_func):
-        layernorm_test(self.infer_backend, pattern_func)
+    def test_layernrom_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.infer_backend):
+            layernorm_test(self.infer_backend, pattern_func)
+        assert "Pattern.FusedLayerNorm changed graph" in caplog.text
 
     @pytest.mark.parametrize(
         "pattern_func",
         [fn2, fn3],
     )
-    def test_layernrom_patterns_with_loss_and_grad(self, pattern_func):
-        layernorm_test_with_loss_and_grad(self.train_backend, pattern_func)
+    def test_layernrom_patterns_with_loss_and_grad(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
+            layernorm_test_with_loss_and_grad(self.train_backend, pattern_func)
+        assert "Pattern.FusedLayerNorm changed graph" in caplog.text
 
 
 if __name__ == "__main__":
@@ -139,7 +148,7 @@ if __name__ == "__main__":
     layernorm_test(infer_backend, fn3)
     train_config = xpu_graph.XpuGraphConfig(
         is_training=True, opt_level=OptLevel.level2, debug=True
-        )
+    )
     train_backend = xpu_graph.XpuGraph(train_config)
     layernorm_test_with_loss_and_grad(train_backend, fn0)
     layernorm_test_with_loss_and_grad(train_backend, fn1)
