@@ -28,7 +28,10 @@ def find_slice_nodes(graph_module):
             continue
         # skip output
         if len(node.users) == 1:
-            if next(iter(node.users)).target == "output":
+            # process side effects caused by FusedCatSlice.
+            if node.meta.get("changed_by_fused_slice_cat", False):
+                pass
+            elif next(iter(node.users)).target == "output":
                 continue
         if node.args[0] not in candi_nodes:
             candi_nodes[node.args[0]] = []

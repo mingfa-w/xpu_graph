@@ -118,6 +118,10 @@ def fuse_mixed_ops_and_catstack(graph_module: fx.GraphModule):
         if not is_slice:
             continue
 
+        # mark these slice node bacause this pattern will cause side effects.
+        for n in n_list:
+            n.meta['changed_by_fused_slice_cat'] = True
+
         new_cat_input = ori_cat_input[:start]
 
         slice_node = insert_fuse_slice(graph_module, node, src_node, slice_param)
