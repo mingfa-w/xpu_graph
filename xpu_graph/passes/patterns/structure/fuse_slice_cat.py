@@ -99,7 +99,6 @@ def match_sub_list(lst):
             current_len = 0
     return best_start, best_end
 
-
 def fuse_mixed_ops_and_catstack(graph_module: fx.GraphModule):
     changed = False
     for node in reversed(graph_module.graph.nodes):
@@ -142,10 +141,19 @@ def fuse_mixed_ops_and_catstack(graph_module: fx.GraphModule):
                     name=node.name + "_replacement",
                 )
         else:
-            with graph_module.graph.inserting_before(node):
-                cat_node = graph_module.graph.call_module(
-                    "reshape_cat_module", args=(new_cat_input, -1)
-                )
+            if len(new_cat_input) == 1:
+                with graph_module.graph.inserting_before(node):
+                    cat_node = graph_module.graph.create_node(
+                        op="call_function",
+                        target=torch.ops.aten.cat.default,
+                        args=(new_cat_input, 0),
+                        name=node.name + "_replacement",
+                    )
+            else:
+                with graph_module.graph.inserting_before(node):
+                    cat_node = graph_module.graph.call_module(
+                        "reshape_cat_module", args=(new_cat_input, -1)
+                    )
         node.replace_all_uses_with(cat_node)
         slice_nodes = node.args[0]
         for slice_node in slice_nodes:
@@ -155,7 +163,6 @@ def fuse_mixed_ops_and_catstack(graph_module: fx.GraphModule):
         changed = True
 
     return changed
-
 
 class FusedCatSlice(Pattern):
     def __init__(self, target_mod: torch.nn.Module, *super_args):
@@ -173,5 +180,8 @@ class FusedCatSlice(Pattern):
 
         # slice & cat, the inputs of cat are mixed with slice and other ops.
         changed = changed | fuse_mixed_ops_and_catstack(graph_module)
+
+        graph_module.graph.lint()
+        graph_module.recompile()
 
         return changed
