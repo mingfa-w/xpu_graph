@@ -3,8 +3,10 @@ import torch_mlu
 import triton
 import triton.language as tl
 from typing import List
+from . import libentry
 
 
+@libentry.libentry()
 @triton.jit
 def mlu_triton_slice_low_kernel(
     input_ptr,
