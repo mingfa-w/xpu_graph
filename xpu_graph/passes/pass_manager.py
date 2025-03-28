@@ -47,6 +47,8 @@ class PassManager:
                 changed = changed or pass_(gm)
 
         gm.recompile()
+        if stage == FxStage.pregrad:
+            print(gm.graph)
 
         if self.config.enable_cache:
             # Note: Currently, we only inline modules with a E2E make_fx, just for serialize / desrialize
