@@ -26,19 +26,22 @@ class FusedGatherToCopy(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
+        enable_node = [torch.ops.aten.gather.default]
+        #enable_node = [torch.ops.aten.gather.default, torch.ops.aten.where.self]
         candidates = [
             node
             for node in graph_module.graph.nodes
             if node.op == "call_function"
-            and node.target == torch.ops.aten.gather.default
+            and node.target in enable_node 
         ]
         for gather_node in candidates:
             repeat_node = gather_node.args[2]
             gather_dim = gather_node.args[1]
             if repeat_node.target != torch.ops.aten.repeat.default:
                 continue
-            if len(repeat_node.users) != 1:
-                continue
+            #if len(repeat_node.users) != 1:
+            #    continue
+            import pdb;pdb.set_trace()
 
             repeat_param = repeat_node.args[1]
             expand_param = [-1 if i == 1 else i for i in repeat_param]
@@ -51,8 +54,10 @@ class FusedGatherToCopy(Pattern):
                     name=gather_node.name + "_replacement",
                 )
             repeat_node.replace_all_uses_with(new_node)
-            graph_module.graph.erase_node(repeat_node)
+            #graph_module.graph.erase_node(repeat_node)
             is_modified = True
+            print("success", gather_node, gather_node.args)
             graph_module.graph.lint()
             graph_module.recompile()
+        print(graph_module.graph)
         return is_modified
