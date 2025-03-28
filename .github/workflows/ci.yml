@@ -17,5 +17,8 @@ jobs:
       - name: Running mlu tests
         shell: bash
         run: |
+          python3 -m venv --system-site-packages .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
           echo "Running MLU tests..."
           python3 -m pytest --ignore=tests/xpu_ops tests
