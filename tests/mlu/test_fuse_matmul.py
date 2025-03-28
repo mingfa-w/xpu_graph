@@ -5,6 +5,11 @@ import xpu_graph
 from xpu_graph.config import OptLevel
 import torch.nn.functional as F
 from xpu_graph.test_utils import assertTensorsEqual
+from xpu_graph.test_utils import (
+    assertTensorsEqual,
+    need_xpu_graph_logs,
+    skip_xpu_graph_cache,
+)
 
 device = "mlu:0"
 data_type = torch.float32
@@ -168,8 +173,10 @@ class TestMatMul:
             fn19,
         ],
     )
-    def test_matmul_patterns(self, pattern_func):
-        matmul_test(self.xpu_graph_backend, pattern_func)
+    def test_matmul_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            matmul_test(self.xpu_graph_backend, pattern_func)
+        assert "Pattern.FusedMatMul changed graph" in caplog.text
 
 
 if __name__ == "__main__":
