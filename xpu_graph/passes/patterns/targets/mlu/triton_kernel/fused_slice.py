@@ -3,10 +3,10 @@ import torch_mlu
 import triton
 import triton.language as tl
 from typing import List
-from . import libentry
+#from . import libentry
 
 
-@libentry.libentry()
+#@libentry.libentry()
 @triton.jit
 def mlu_triton_slice_low_kernel(
     input_ptr,
@@ -31,6 +31,7 @@ def mlu_triton_slice_low_kernel(
         for block_idx in range(block_jobs_r):
             slice_idx = block_idx + block_jobs * program_id
             start_index = tl.load(start_indices_ptr + slice_idx)
+            output_ptr_offset = output_ptr + (slice_idx * input_row) * slice_len
 
             input_block_ptr = tl.make_block_ptr(
                 base=input_ptr,
@@ -42,10 +43,10 @@ def mlu_triton_slice_low_kernel(
             )
             value = tl.load(input_block_ptr, boundary_check=(0,), padding_option=0)
             output_block_ptr = tl.make_block_ptr(
-                base=output_ptr,
-                shape=(input_row * total_jobs, slice_len),
+                base=output_ptr_offset,
+                shape=(input_row, slice_len),
                 strides=(slice_len, 1),
-                offsets=(slice_idx * input_row + l * BLOCK_SIZE_R, 0),
+                offsets=(l * BLOCK_SIZE_R, 0),
                 block_shape=(BLOCK_SIZE_R, BLOCK_SIZE_C),
                 order=(1, 0),
             )
@@ -57,9 +58,9 @@ def fused_slice_low(
     src_tensor: torch.Tensor,
     start_indices: torch.Tensor,
     slice_len: int,
-    n_rows: int,
-    input_stride: int,
 ) -> torch.Tensor:
+    n_rows = src_tensor.shape[0]
+    input_stride = src_tensor.stride(0)
     block_size_r = n_rows
     block_size_c = slice_len
     size_of_dtype = 2
@@ -91,14 +92,15 @@ def fused_slice_low(
         block_size_c,
     )
 
-    return output_tensors
+    return output_tensors.view(num_slices, src_tensor.shape[0], slice_len)
 
 
 @fused_slice_low.register_fake
-def fused_slice_low_fake(src_tensor, start_indices, slice_len, n_rows, input_stride):
+def fused_slice_low_fake(src_tensor, start_indices, slice_len):
     output_tensors = torch.empty(
-        (len(start_indices) * src_tensor.shape[0], slice_len),
+        (len(start_indices) , src_tensor.shape[0], slice_len),
         device=src_tensor.device,
         dtype=src_tensor.dtype,
     )
     return output_tensors
+
