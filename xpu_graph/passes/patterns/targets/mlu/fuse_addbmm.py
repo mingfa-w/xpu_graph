@@ -3,6 +3,7 @@ from typing import Optional
 import torch
 from torch import nn, fx
 import torch_mlu
+from xpu_graph.fx_utils import FxStage
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
@@ -49,7 +50,7 @@ class FusedBAddBMMReplacement(nn.Module):
         if bias is not None:
             if bias.dtype != output_dtype:
                 bias = bias.to(output_dtype)
-            output = torch.bmm(input1, input2) + bias
+            output = torch.baddbmm(bias, input1, input2)
         else:
             output = torch.bmm(input1, input2)
 
@@ -70,7 +71,7 @@ def _is_bmm(
 
 
 def check_fused_bmm(node: fx.Node) -> tuple[bool, fx.Node | None, fx.Node | None]:
-    if not check_op(node, "fused_bmm"):
+    if not isinstance(node, fx.Node) or node.target != "fused_bmm":
         return False
     return True
 
@@ -121,6 +122,7 @@ def _is_bmm_view(node, target_str):
 
 class FusedBMM(Pattern):
     _opt_level = OptLevel.level2
+    _stages = [FxStage.pregrad, FxStage.forward]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
@@ -158,6 +160,7 @@ class FusedBMM(Pattern):
 
 class FusedBaddBMM(Pattern):
     _opt_level = OptLevel.level2
+    _stages = [FxStage.pregrad, FxStage.forward]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
