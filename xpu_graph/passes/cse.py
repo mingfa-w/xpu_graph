@@ -48,10 +48,19 @@ def fx_graph_cse(fx_g: torch.fx.graph.Graph):
 
     from torch._inductor.pattern_matcher import (
         compute_mutation_region_ids,
-        same_mutation_regions,
     )
+    
+    # Compatible with version torch==2.3.1
+    try:
+        from torch._inductor.pattern_matcher import same_mutation_regions
+    except ImportError: 
+        def same_mutation_regions(a, b) -> bool:
+            assert "mutation_region_id" in a.meta
+            assert "mutation_region_id" in b.meta
+            return a.meta["mutation_region_id"] == b.meta["mutation_region_id"]
 
     compute_mutation_region_ids(fx_g)  # type: ignore[arg-type]
+
 
     # Make a set of separate storages returned from the output, which will be preserved
     # when pruning.  This prevents us from deduplicating returned tensors which have

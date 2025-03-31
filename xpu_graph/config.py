@@ -8,6 +8,7 @@ import warnings
 class Target(Enum):
     ascend = "ascend"
     mlu = "mlu"
+    npu = "npu"
     none = "none"
 
 

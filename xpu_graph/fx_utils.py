@@ -1,7 +1,6 @@
 import torch
 import torch.utils._pytree as pytree
 from torch.export.unflatten import _assign_attr, _AttrKind
-from torch.export._unlift import _unlift_inputs_as_getattr, _insert_copy_for_mutations
 
 
 from torch.fx import map_arg
@@ -33,7 +32,8 @@ def unlift_exported_gm(mod, gm, graph_signature, freeze=True):
         The unlifted GraphModule
     """
     # Build state dictionary from parameters and buffers
-
+    #lazy import 
+    from torch.export._unlift import _unlift_inputs_as_getattr, _insert_copy_for_mutations
     if freeze:
         # Assign parameters to the graph module
         for name, param in mod.named_parameters(remove_duplicate=False):
