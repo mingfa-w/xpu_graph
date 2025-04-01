@@ -261,9 +261,6 @@ def replace_node(graph_module, node, mm_param, func_name):
 
 
 def match_mm(graph_module):
-    graph_module.add_submodule(
-        "mlu_tmo_fused_matmul_1_replacement", FusedMatMulReplacement()
-    )
     changed = False
     for node in reversed(graph_module.graph.nodes):
         is_match, mm_param = _is_matmul(node)
@@ -276,9 +273,6 @@ def match_mm(graph_module):
 
 
 def match_mm_add1(graph_module):
-    graph_module.add_submodule(
-        "mlu_tmo_fused_matmul_2_replacement", FusedMatMulReplacement()
-    )
     changed = False
     for node in reversed(graph_module.graph.nodes):
         if not check_add_op(node):
@@ -324,9 +318,6 @@ def _is_addmm(node: NodeType) -> Tuple[bool, Optional[MMParam]]:
 
 
 def match_mm_add2(graph_module):
-    graph_module.add_submodule(
-        "mlu_tmo_fused_matmul_2_replacement", FusedMatMulReplacement()
-    )
     changed = False
     for node in reversed(graph_module.graph.nodes):
 
@@ -340,14 +331,6 @@ def match_mm_add2(graph_module):
 
 
 def match_mm_act(graph_module):
-    # mm+act
-    graph_module.add_submodule(
-        "mlu_tmo_fused_matmul_3_replacement", FusedMatMulReplacement()
-    )
-    # mm+bias+act
-    graph_module.add_submodule(
-        "mlu_tmo_fused_matmul_4_replacement", FusedMatMulReplacement()
-    )
     changed = False
     for node in reversed(graph_module.graph.nodes):
         is_cat, act_str = check_act_op(node)
@@ -408,17 +391,45 @@ class FusedMatMul(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
+        graph_module.add_submodule(
+            "mlu_tmo_fused_matmul_1_replacement", FusedMatMulReplacement()
+        )
         is_modified |= match_mm(graph_module)
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_1_replacement")
         graph_module.graph.lint()
         graph_module.recompile()
 
+        return is_modified
+
+class FusedMatMulAdd(Pattern):
+    _opt_level = OptLevel.level2
+
+    def process(self, graph_module: fx.GraphModule) -> bool:
+        is_modified = False
+        graph_module.add_submodule(
+            "mlu_tmo_fused_matmul_2_replacement", FusedMatMulReplacement()
+        )
         is_modified |= match_mm_add1(graph_module)
         is_modified |= match_mm_add2(graph_module)
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_2_replacement")
         graph_module.graph.lint()
         graph_module.recompile()
 
+        return is_modified
+
+class FusedMatMulAct(Pattern):
+    _opt_level = OptLevel.level2
+
+    def process(self, graph_module: fx.GraphModule) -> bool:
+        # mm+act
+        is_modified = False
+        graph_module.add_submodule(
+            "mlu_tmo_fused_matmul_3_replacement", FusedMatMulReplacement()
+        )
+        # mm+bias+act
+        graph_module.add_submodule(
+            "mlu_tmo_fused_matmul_4_replacement", FusedMatMulReplacement()
+        )
         is_modified |= match_mm_act(graph_module)
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_3_replacement")
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_4_replacement")
