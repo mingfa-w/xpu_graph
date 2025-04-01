@@ -534,7 +534,7 @@ def cat_two_dim(
     #if dim == 1 or dim == -1:
     total_dim1_len = get_total_dim_len(input_tensors, 1)
     dim0_len = input_tensors[0].shape[0]
-    output_tensor = torch.zeros((dim0_len, total_dim1_len), dtype=input_tensors[0].dtype, device=input_tensors[0].device)
+    output_tensor = torch.empty((dim0_len, total_dim1_len), dtype=input_tensors[0].dtype, device=input_tensors[0].device)
     if  inp_num == 4:
         fn4_dim1[(1,1,1)](output_tensor, 
                         input_tensors[0], input_tensors[1], input_tensors[2], input_tensors[3], 
