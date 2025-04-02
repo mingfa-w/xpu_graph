@@ -48,6 +48,8 @@ class FusedLayernormMMReplacement(nn.Module):
             #head_size,
             #norm_out,
         )
+        if inputs.dim() == 2 and output.dim() == 3 and output.shape[0] == 1:
+            output = output.squeeze(0)
         if shape_param:
             output = output.view(shape_param)
         return output
@@ -83,7 +85,7 @@ def _is_layernorm_mm(
         q_bias_shape = q_bias.meta["tensor_meta"].shape
         if len(q_bias_shape) == 2 and q_bias_shape[0] > 1:
             return False, ()
-    
+
     return True, (inputs, norm_weight, norm_bias, eps, q_weight, q_bias, trans_b, shape_param)
     
 
