@@ -133,9 +133,10 @@ def fused_slice_cat(
     output_tensor = torch.empty(n_rows, output_xnumel, device=input_tensor.device, dtype=input_tensor.dtype)
 
     # grid = (n_rows,1,1)
+    GRID_CNT = Multiflow.AivNum // Multiflow.FlowNum
     grid_flow = n_rows
-    flow_p_len = (grid_flow - 1) // Multiflow.FlowNum + 1
-    grid = (Multiflow.FlowNum, 1, 1)
+    flow_p_len = (grid_flow - 1) // GRID_CNT + 1
+    grid = (GRID_CNT, 1, 1)
     
     npu_triton_slice_cat_kernel_4_qianchuan[grid](
         input_tensor,output_tensor,

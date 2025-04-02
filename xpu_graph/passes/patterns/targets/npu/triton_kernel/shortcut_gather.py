@@ -70,9 +70,10 @@ def shortcut_gather(
     num_batch = input_tensor.shape[0]
     pblock = 4
     # grid = ((num_batch - 1) // pblock + 1, 1, 1)
+    GRID_CNT = Multiflow.AivNum // Multiflow.FlowNum
     grid_flow = (num_batch - 1) // pblock + 1
-    flow_p_len = (grid_flow - 1) // Multiflow.FlowNum + 1
-    grid = (Multiflow.FlowNum, 1, 1)
+    flow_p_len = (grid_flow - 1) // GRID_CNT + 1
+    grid = (GRID_CNT, 1, 1)
     
     output_tensor = get_empty_result_tensor(input_tensor, dim, prefix_len)
     
