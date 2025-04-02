@@ -70,12 +70,12 @@ def rmsnorm_test(xpu_graph, func):
         if func != fn3:
             norm = compiled(a)
             norm1 = func(a)
-            assert is_similar(norm1.float(), norm.float())
+            assert is_similar(norm1.cpu().float(), norm.cpu().float())
         else:
             norm, res = compiled(a)
             norm1, res1 = func(a)
-            assert is_similar(norm1.float(), norm.float())
-            assert is_similar(res1.float(), res.float())
+            assert is_similar(norm1.cpu().float(), norm.cpu().float())
+            assert is_similar(res1.cpu().float(), res.cpu().float())
 
 
 class TestRMSNorm:

@@ -87,7 +87,7 @@ def sumcat_test(xpu_graph_backend, func):
         compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
         res1 = func(*args)
         res = compiled(*args)
-        assert is_similar(res1.float(), res.float())
+        assert is_similar(res1.cpu().float(), res.cpu().float())
 
 
 class TestSliceSumCat:
