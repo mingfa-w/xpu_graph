@@ -44,7 +44,7 @@ def mlu_compiler(
     config = dataclasses.replace(default_config, **patch_configs)
 
     if "cache" not in patch_configs:
-        cache = default_cache() if is_training else no_cache()
+        cache = no_cache() if is_training else default_cache()
     elif isinstance(patch_configs["cache"], str):
         cache = XpuGraphLocalCache(patch_configs["cache"])
     else:
