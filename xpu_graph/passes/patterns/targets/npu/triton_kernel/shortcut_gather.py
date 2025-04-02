@@ -4,38 +4,48 @@ import triton
 import triton.language as tl
 from typing import List
 
-@triton.jit
-def npu_shortcut_gather_3D_dim1_prefix(in_ptr, out_ptr, pnumel: tl.constexpr, xnumel: tl.constexpr, rnumel: tl.constexpr, PBLOCK: tl.constexpr, XBLOCK: tl.constexpr):
-    poffset = tl.program_id(0) * PBLOCK
-    pidx = tl.arange(0, PBLOCK)[:,None,None] + poffset
-    xidx = tl.arange(0, XBLOCK)[None,:,None]
-    ridx = tl.arange(0, rnumel)[None,None,:]
-    
-    pmask = pidx<pnumel
-    base_mask = tl.full((PBLOCK,XBLOCK,rnumel),True,tl.int1)
-    mask = pmask&base_mask
-
-    idx = pidx * xnumel * rnumel + xidx * rnumel + ridx
-
-    tmp = tl.load(in_ptr + idx, mask)
-    oidx = pidx * XBLOCK * rnumel + xidx * rnumel + ridx
-    tl.store(out_ptr + oidx, tmp, mask)
+from xpu_graph.config import Multiflow
 
 @triton.jit
-def npu_shortcut_gather_2D_dim1_prefix(in_ptr, out_ptr, pnumel: tl.constexpr, xnumel: tl.constexpr, PBLOCK: tl.constexpr, XBLOCK: tl.constexpr):
-    poffset = tl.program_id(0) * PBLOCK
-    pidx = tl.arange(0, PBLOCK)[:,None] + poffset
-    xidx = tl.arange(0, XBLOCK)[None,:]
-    
-    pmask = pidx<pnumel
-    base_mask = tl.full((PBLOCK,XBLOCK),True,tl.int1)
-    mask = pmask&base_mask
+def npu_shortcut_gather_3D_dim1_prefix(in_ptr, out_ptr, flow_p_len: tl.constexpr, grid_flow: tl.constexpr, pnumel: tl.constexpr, xnumel: tl.constexpr, rnumel: tl.constexpr, PBLOCK: tl.constexpr, XBLOCK: tl.constexpr):
+    pbegin = tl.program_id(0) * flow_p_len
+    pend = min(pbegin+flow_p_len,grid_flow)
+    for pid in range(pbegin, pend):
+        poffset = pid * PBLOCK
+        # poffset = tl.program_id(0) * PBLOCK
+        pidx = tl.arange(0, PBLOCK)[:,None,None] + poffset
+        xidx = tl.arange(0, XBLOCK)[None,:,None]
+        ridx = tl.arange(0, rnumel)[None,None,:]
+        
+        pmask = pidx<pnumel
+        base_mask = tl.full((PBLOCK,XBLOCK,rnumel),True,tl.int1)
+        mask = pmask&base_mask
 
-    idx = pidx * xnumel + xidx
+        idx = pidx * xnumel * rnumel + xidx * rnumel + ridx
 
-    tmp = tl.load(in_ptr + idx, mask)
-    oidx = pidx * XBLOCK + xidx
-    tl.store(out_ptr + oidx, tmp, mask)
+        tmp = tl.load(in_ptr + idx, mask)
+        oidx = pidx * XBLOCK * rnumel + xidx * rnumel + ridx
+        tl.store(out_ptr + oidx, tmp, mask)
+
+@triton.jit
+def npu_shortcut_gather_2D_dim1_prefix(in_ptr, out_ptr, flow_p_len: tl.constexpr, grid_flow: tl.constexpr, pnumel: tl.constexpr, xnumel: tl.constexpr, PBLOCK: tl.constexpr, XBLOCK: tl.constexpr):
+    pbegin = tl.program_id(0) * flow_p_len
+    pend = min(pbegin+flow_p_len,grid_flow)
+    for pid in range(pbegin, pend):
+        poffset = pid * PBLOCK
+        # poffset = tl.program_id(0) * PBLOCK
+        pidx = tl.arange(0, PBLOCK)[:,None] + poffset
+        xidx = tl.arange(0, XBLOCK)[None,:]
+        
+        pmask = pidx<pnumel
+        base_mask = tl.full((PBLOCK,XBLOCK),True,tl.int1)
+        mask = pmask&base_mask
+
+        idx = pidx * xnumel + xidx
+
+        tmp = tl.load(in_ptr + idx, mask)
+        oidx = pidx * XBLOCK + xidx
+        tl.store(out_ptr + oidx, tmp, mask)
 
 from torch.library import Library, impl
 from xpu_graph.passes.patterns.targets.npu.triton_kernel import npu_def, npu_lib, npu_meta
@@ -59,8 +69,11 @@ def shortcut_gather(
 ) -> torch.Tensor:
     num_batch = input_tensor.shape[0]
     pblock = 4
-    grid = ((num_batch - 1) // pblock + 1, 1, 1)
-
+    # grid = ((num_batch - 1) // pblock + 1, 1, 1)
+    grid_flow = (num_batch - 1) // pblock + 1
+    flow_p_len = (grid_flow - 1) // Multiflow.FlowNum + 1
+    grid = (Multiflow.FlowNum, 1, 1)
+    
     output_tensor = get_empty_result_tensor(input_tensor, dim, prefix_len)
     
     if not (dim == 1): 
@@ -71,6 +84,7 @@ def shortcut_gather(
             npu_shortcut_gather_3D_dim1_prefix[grid](
                 input_tensor,
                 output_tensor,
+                flow_p_len, grid_flow,
                 pnumel = input_tensor.shape[0],
                 xnumel = input_tensor.shape[1],
                 rnumel = input_tensor.shape[2],
@@ -81,6 +95,7 @@ def shortcut_gather(
             npu_shortcut_gather_2D_dim1_prefix[grid](
                 input_tensor,
                 output_tensor,
+                flow_p_len, grid_flow,
                 pnumel = input_tensor.shape[0],
                 xnumel = input_tensor.shape[1],
                 PBLOCK = pblock,

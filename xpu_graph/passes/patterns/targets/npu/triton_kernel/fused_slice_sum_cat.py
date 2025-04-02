@@ -5,6 +5,8 @@ import triton
 import triton.language as tl
 from typing import List
 
+from xpu_graph.config import Multiflow
+
 dtype_dict1 = {
     torch.bfloat16: 1,
     torch.float16: 2,
@@ -68,45 +70,50 @@ def npu_triton_slice_sum_cat_kernel(
     row,
     col,
     output_num,
+    flow_p_len: tl.constexpr, grid_flow: tl.constexpr,
     BLOCK_SIZE_R: tl.constexpr,
     BLOCK_SIZE_C: tl.constexpr,
 ):
-    program_id = tl.program_id(0)
-    # program_id = 85
-    indices_offset = indices_ptr
-    input_offset = input_ptr + program_id * input_stride0
-    output_offset = output_ptr + program_id * output_stride0
+    pbegin = tl.program_id(0) * flow_p_len
+    pend = min(pbegin+flow_p_len,grid_flow)
+    for pid in range(pbegin, pend):
+        program_id = pid
+        # program_id = tl.program_id(0)
+        # program_id = 85
+        indices_offset = indices_ptr
+        input_offset = input_ptr + program_id * input_stride0
+        output_offset = output_ptr + program_id * output_stride0
 
-    index_row = tl.arange(0, BLOCK_SIZE_R)
-    # mask_row = index_row < row
-    for coffs in range(0,col,BLOCK_SIZE_C):
-        index_col = tl.arange(0, BLOCK_SIZE_C) + coffs
-        mask_col = index_col < col
-        # # origin code :
-        # mask = mask_row[:, None] & mask_col[None, :]
-        # input_data = tl.load(
-        #     input_offset + index_row[:, None] * input_stride1 + index_col[None, :],
-        #     mask=mask,
-        # )
-        for i in range(output_num):
-            indices_start = tl.load(indices_offset + i*2)
-            indices_end = tl.load(indices_offset + i*2 + 1)
+        index_row = tl.arange(0, BLOCK_SIZE_R)
+        # mask_row = index_row < row
+        for coffs in range(0,col,BLOCK_SIZE_C):
+            index_col = tl.arange(0, BLOCK_SIZE_C) + coffs
+            mask_col = index_col < col
+            # # origin code :
+            # mask = mask_row[:, None] & mask_col[None, :]
+            # input_data = tl.load(
+            #     input_offset + index_row[:, None] * input_stride1 + index_col[None, :],
+            #     mask=mask,
+            # )
+            for i in range(output_num):
+                indices_start = tl.load(indices_offset + i*2)
+                indices_end = tl.load(indices_offset + i*2 + 1)
 
-            true_index_row = index_row[:,None] + indices_start
+                true_index_row = index_row[:,None] + indices_start
 
-            slice_value = tl.load(
-                input_offset + true_index_row * input_stride1 + index_col[None,:],
-                mask = (true_index_row < indices_end) & mask_col,
-                other = 0
-            )
-            # # origin code : 
-            # slice_mask = (index_row < indices_end) & (index_row > (indices_start - 1))
-            # combined_mask = slice_mask[:, None] & mask_col[None, :]
-            # slice_value = tl.where(combined_mask, input_data, 0)
-            
-            sum_value = tl.sum(slice_value, axis=0)
-            # pdb.set_trace()
-            tl.store(output_offset + i * col + index_col, sum_value, mask=mask_col)
+                slice_value = tl.load(
+                    input_offset + true_index_row * input_stride1 + index_col[None,:],
+                    mask = (true_index_row < indices_end) & mask_col,
+                    other = 0
+                )
+                # # origin code : 
+                # slice_mask = (index_row < indices_end) & (index_row > (indices_start - 1))
+                # combined_mask = slice_mask[:, None] & mask_col[None, :]
+                # slice_value = tl.where(combined_mask, input_data, 0)
+                
+                sum_value = tl.sum(slice_value, axis=0)
+                # pdb.set_trace()
+                tl.store(output_offset + i * col + index_col, sum_value, mask=mask_col)
 
 #from torch.library import Library, impl
 # from ..fused_sum_cat import npu_def, npu_lib, npu_meta
@@ -176,8 +183,13 @@ def fuse_slice_sum_cat(
     UB_LIMIT=1392*16
     block_size_r = row
     block_size_c = min(max(UB_LIMIT // row, 1) , col)
-    grid = (total_jobs, 1, 1)
+    # grid = (total_jobs, 1, 1)
 
+    grid_flow = total_jobs
+    flow_p_len = (grid_flow - 1) // Multiflow.FlowNum + 1
+    grid = (Multiflow.FlowNum, 1, 1)
+    
+    
     npu_triton_slice_sum_cat_kernel[grid](
         output_tensor,
         input_tensor,
@@ -188,6 +200,7 @@ def fuse_slice_sum_cat(
         row,
         col,
         output_num,
+        flow_p_len, grid_flow,
         block_size_r,
         block_size_c,
     )
