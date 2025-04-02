@@ -33,12 +33,18 @@ def fused_mul_sum_cat(x1, x2, x3, x4):
 def find_mul_sum_pattern(gm):
     # Dictionary to store mapping from source nodes to sum nodes
     sum_dict = {}
-    for node in gm.graph.nodes:
+    candidates = [
+        node
+        for node in gm.graph.nodes
+        if node.op == "call_function"
+        and node.target == torch.ops.aten.sum.dim_IntList
+    ]
+    for node in candidates:
         ### Identify sum operation: input 3D, output 2D ###
-        if not check_sum_op(node):
-            continue
         if not check_meta_2d(node):
             continue
+        print(node, node.args[0])
+        import pdb;pdb.set_trace()
         # check sum dim
         if node.args[1] != [1]:
             continue
@@ -60,7 +66,7 @@ def find_mul_sum_pattern(gm):
 
 class FusedMulSumCat(Pattern):
     _opt_level = OptLevel.level2
-    _stages = [FxStage.inference, FxStage.pregrad]
+    _stages = [FxStage.inference]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
