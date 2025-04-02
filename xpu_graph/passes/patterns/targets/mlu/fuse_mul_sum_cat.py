@@ -1,5 +1,4 @@
 from typing import Optional
-
 import torch
 from torch import nn, fx
 import torch_mlu
@@ -17,11 +16,17 @@ from xpu_graph.fx_utils import FxStage
 
 
 def mul_sum_cat_pattern(x1, x2, x3, x4):
+    '''
     a = x1 * x2
     a_sum = a.sum(dim=1)
     b = x3 * x4
     b_sum = b.sum(dim=1)
     out = torch.cat([a_sum, b_sum], dim=1)
+    '''
+    s0, s1, s2 = x1.shape
+    tmp = torch.cat([x1, x3, x2, x4], dim = 0).view(2, 2, s0, s1, s2)
+    tmp = tmp[0] * tmp[1]
+    out = torch.sum(dim = 2)
     return out
 
 def fused_mul_sum_cat(x1, x2, x3, x4):
@@ -43,8 +48,8 @@ def find_mul_sum_pattern(gm):
         ### Identify sum operation: input 3D, output 2D ###
         if not check_meta_2d(node):
             continue
-        print(node, node.args[0])
-        import pdb;pdb.set_trace()
+        #print(node, node.args[0])
+        #import pdb;pdb.set_trace()
         # check sum dim
         if node.args[1] != [1]:
             continue

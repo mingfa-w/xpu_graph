@@ -38,6 +38,6 @@ def bmm_test(xpu_graph_backend, func):
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=True, freeze=True, opt_level=OptLevel.level2, vendor_compiler_config=False,
+        is_training=False, freeze=True, opt_level=OptLevel.level2, vendor_compiler_config=False, debug = True
     )
     bmm_test(xpu_graph_backend, fn0)
