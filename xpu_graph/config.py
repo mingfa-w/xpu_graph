@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 class Multiflow():
-    FlowNum = os.getenv('NPU_FLOWNUM', 1)
-    AicNum = os.getenv('NPU_AICNUM', 24)
+    FlowNum = int(os.getenv('NPU_FLOWNUM', 1))
+    AicNum = int(os.getenv('NPU_AICNUM', 24))
     AivNum = 2 * AicNum
 
 class Target(Enum):
