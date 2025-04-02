@@ -4,9 +4,9 @@ from xpu_graph.fx_utils import FxStage
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import AutoMatchPattern
 
-class RemoveLayerNormCast(AutoMatchPattern):
+class RemoveLayerNormCastForward(AutoMatchPattern):
     _opt_level = OptLevel.level2
-    _stages = [FxStage.inference, FxStage.pregrad]
+    _stages = [FxStage.inference]
 
     def rewriter(self, gm: fx.GraphModule, rule_name: str, node_map: dict) -> bool:
         assert len(node_map) == 4
