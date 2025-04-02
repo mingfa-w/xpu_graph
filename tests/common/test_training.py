@@ -73,7 +73,7 @@ class TestTraining:
         "ReproCls",
         [SimpleModel, SliceCatModel],
     )
-    def test_layernrom_patterns_with_loss_and_grad(self, ReproCls):
+    def test_layernorm_patterns_with_loss_and_grad(self, ReproCls):
         compare_training(ReproCls, self.train_backend)
 
 
