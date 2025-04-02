@@ -95,6 +95,7 @@ def fuse_slice_where_cat(
     if slice_tensor.dtype == torch.float32:
         size_of_dtype = 4
     nram_limit = 416 * 1024
+    # 2 -> 3: input(slice_data) + output(slice_where) + where_data + Caching of intermediate results
     if (block_r * block_c * size_of_dtype) * 3 > nram_limit:
         block_r = nram_limit // 3 // size_of_dtype // block_c
 
