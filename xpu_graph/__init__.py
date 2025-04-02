@@ -1,6 +1,6 @@
 from .compiler import XpuGraph, optimize_graph
 from .config import Target, OptLevel, XpuGraphConfig
-from .cache import XpuGraphCache, default_cache, no_cache
+from .cache import XpuGraphCache, XpuGraphLocalCache, default_cache, no_cache
 import dataclasses
 
 __all__ = [
@@ -35,11 +35,24 @@ def mlu_compiler(
     """
 
     default_config = _MLU_TRAIN_CONFIG if is_training else _MLU_INFER_CONFIG
+
+    assert "target" not in patch_configs, "target is not allowed to be set here"
+    if "opt_level" in patch_configs and not isinstance(
+        patch_configs["opt_level"], OptLevel
+    ):
+        patch_configs["opt_level"] = OptLevel(int(patch_configs["opt_level"]))
     config = dataclasses.replace(default_config, **patch_configs)
+
     if "cache" not in patch_configs:
         cache = default_cache() if is_training else no_cache()
+    elif isinstance(patch_configs["cache"], str):
+        cache = XpuGraphLocalCache(patch_configs["cache"])
     else:
+        assert isinstance(
+            patch_configs["cache"], XpuGraphCache
+        ), "cache must be a XpuGraphCache instance"
         cache = patch_configs["cache"]
+        
     if not is_training:
         import torch_mlu_ops
     return XpuGraph(config, cache)
