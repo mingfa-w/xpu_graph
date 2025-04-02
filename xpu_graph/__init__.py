@@ -1,7 +1,7 @@
 from .compiler import XpuGraph, optimize_graph
 from .config import Target, OptLevel, XpuGraphConfig
 from .cache import XpuGraphCache, default_cache, no_cache
-from typing import Dict, Any, Optional
+import dataclasses
 
 __all__ = [
     "XpuGraph",
@@ -17,17 +17,12 @@ __all__ = [
 
 def mlu_compiler(
     is_training: bool,
-    freeze: bool = True,
-    opt_level: OptLevel = OptLevel.level1,
-    constant_folding: bool = True,
-    cache: Optional[XpuGraphCache] = no_cache(),
-    debug: bool = False,
-    vendor_compiler_config: Dict[str, Any] = {"mode": "reduce-overhead"},
+    **patch_configs,
 ) -> XpuGraph:
     """
     Create an MLU compiler configuration and return an XpuGraph instance.
 
-    Args:
+    Possible Patch Args:
         freeze: Whether to freeze the graph.
         opt_level: Optimization level.
         constant_folding: Whether to enable constant folding.
@@ -39,15 +34,35 @@ def mlu_compiler(
         An XpuGraph instance configured for MLU.
     """
 
-    config = XpuGraphConfig(
-        is_training=is_training,
-        target=Target.mlu,
-        freeze=freeze,
-        opt_level=opt_level,
-        constant_folding=constant_folding,
-        debug=debug,
-        vendor_compiler_config=vendor_compiler_config,
-    )
+    default_config = _MLU_TRAIN_CONFIG if is_training else _MLU_INFER_CONFIG
+    config = dataclasses.replace(default_config, **patch_configs)
+    if "cache" not in patch_configs:
+        cache = default_cache() if is_training else no_cache()
+    else:
+        cache = patch_configs["cache"]
     if not is_training:
         import torch_mlu_ops
     return XpuGraph(config, cache)
+
+
+_MLU_TRAIN_CONFIG = XpuGraphConfig(
+    is_training=True,
+    debug=False,
+    target=Target.mlu,
+    enable_cache=True,
+    freeze=False,
+    opt_level=OptLevel.level2,
+    constant_folding=False,
+    vendor_compiler_config={"mode": "reduce-overhead"},
+)
+
+_MLU_INFER_CONFIG = XpuGraphConfig(
+    is_training=False,
+    debug=False,
+    target=Target.mlu,
+    enable_cache=True,
+    freeze=False,
+    opt_level=OptLevel.level2,
+    constant_folding=False,
+    vendor_compiler_config={"mode": "reduce-overhead"},
+)
