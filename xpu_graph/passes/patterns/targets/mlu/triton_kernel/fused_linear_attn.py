@@ -4,7 +4,9 @@ import torch_mlu
 import triton
 import triton.language as tl
 from typing import List
-from .linear_attention import attention
+from xpu_graph.utils import logger
+
+from .linear_attention_kernel import attention
 
 
 @torch.library.custom_op(
@@ -19,14 +21,18 @@ def linear_attn(
     sm_scale: float,
     has_bias: bool,
 ) -> torch.Tensor:
-    expand = True
+    expand = False
     if has_bias:
         if len(bias.shape) == 2:
             expand = False
         elif len(bias.shape) == 3 and bias.shape[0] == 1:
             bias = bias.squeeze(0)
             expand = False
-    output_tensor = attention(q, k, v, bias, causal, sm_scale, has_bias, expand)
+        elif len(bias.shape) == 4:
+            expand = True
+        else:
+            logger.error(f"Linear Atention: unexpected shape: {bias.shape}")
+    output_tensor = attention(q, k, v, bias, causal, has_bias, expand, 1)
     return output_tensor
 
 

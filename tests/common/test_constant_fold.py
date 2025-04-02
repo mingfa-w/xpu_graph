@@ -19,7 +19,7 @@ def test_constant_folding(caplog):
             return torch.matmul(x, weight)
 
     mod = CanConstantFolding()
-    xpu_graph_backend = XpuGraph(XpuGraphConfig(freeze=True, is_training=False))
+    xpu_graph_backend = XpuGraph(XpuGraphConfig(freeze=True, is_training=False, constant_folding=True))
     with need_xpu_graph_logs(), skip_xpu_graph_cache(xpu_graph_backend):
         compiled_mod = torch.compile(mod, backend=xpu_graph_backend, dynamic=False)
         res = compiled_mod(torch.ones(128, 128))
