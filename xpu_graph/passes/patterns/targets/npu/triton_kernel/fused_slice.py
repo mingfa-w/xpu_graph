@@ -100,9 +100,10 @@ def fused_slice_low(
     )
     num_slices = len(start_indices)
     # grid = (num_slices, 1, 1)
+    GRID_CNT = Multiflow.AivNum // Multiflow.FlowNum
     grid_flow = num_slices
-    flow_p_len = (grid_flow - 1) // Multiflow.FlowNum + 1
-    grid = (Multiflow.FlowNum, 1, 1)
+    flow_p_len = (grid_flow - 1) // GRID_CNT + 1
+    grid = (GRID_CNT, 1, 1)
     
     if not (type(src_tensor) is torch._subclasses.fake_tensor.FakeTensor):
         npu_triton_slice_low_kernel[grid](
