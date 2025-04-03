@@ -79,6 +79,7 @@ class XpuGraphConfig:
         vendor_compiler_mode = os.getenv("VENDOR_COMPILER_MODE", "Null")
         if vendor_compiler_mode != "Null":
             if vendor_compiler_mode not in (
+                "default",
                 "cudagraphs",
                 "reduce-overhead",
                 "max-autotune",

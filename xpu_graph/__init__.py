@@ -66,7 +66,7 @@ _MLU_TRAIN_CONFIG = XpuGraphConfig(
     freeze=False,
     opt_level=OptLevel.level2,
     constant_folding=False,
-    vendor_compiler_config={"mode": "reduce-overhead"},
+    vendor_compiler_config={"mode": "default"},
 )
 
 _MLU_INFER_CONFIG = XpuGraphConfig(
