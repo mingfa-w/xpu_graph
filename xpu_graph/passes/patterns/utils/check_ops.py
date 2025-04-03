@@ -304,3 +304,8 @@ def check_where_op(node: fx.node) -> bool:
 
 def check_zeros_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.zeros.default)
+
+def check_squeeze_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.squeeze.default) or \
+           check_op(node, torch.ops.aten.squeeze.dim) or \
+           check_op(node, torch.ops.aten.squeeze.dims)
