@@ -15,18 +15,20 @@ from torch.fx.subgraph_rewriter import replace_pattern
 from xpu_graph.fx_utils import FxStage
 
 
-def mul_sum_cat_pattern(x1, x2, x3, x4):
+def mul_sum_cat_pattern(inputs_list, num):
     '''
     a = x1 * x2
     a_sum = a.sum(dim=1)
     b = x3 * x4
     b_sum = b.sum(dim=1)
-    out = torch.cat([a_sum, b_sum], dim=1)
+    ...
+
+    out = torch.cat([a_sum, b_sum, ...], dim=1)
     '''
-    s0, s1, s2 = x1.shape
-    tmp = torch.cat([x1, x3, x2, x4], dim = 0).view(2, 2, s0, s1, s2)
+    s0, s1, s2 = inputs_list[0].shape
+    tmp = torch.cat(inputs_list, dim=0).view(2, num, s0, s1, s2)
     tmp = tmp[0] * tmp[1]
-    out = torch.sum(dim = 2)
+    out = torch.sum(tmp, dim=2).permute(1, 0, 2).reshape(s0, -1)
     return out
 
 def fused_mul_sum_cat(x1, x2, x3, x4):
@@ -69,6 +71,13 @@ def find_mul_sum_pattern(gm):
             sum_dict[node] = [mul_node.args[0], mul_node.args[1]]
     return sum_dict
 
+def check_all_shapes_equal(nodes):
+    try:
+        ref_shape = nodes[0].meta["tensor_meta"].shape
+        return all(node.meta["tensor_meta"].shape == ref_shape for node in nodes)
+    except (AttributeError, KeyError):
+        return False
+
 class FusedMulSumCat(Pattern):
     _opt_level = OptLevel.level2
     _stages = [FxStage.inference]
@@ -82,7 +91,6 @@ class FusedMulSumCat(Pattern):
                 continue
             sum_dict = find_mul_sum_pattern(graph_module)
             if (len(node.args[0]) == 2) and (node.args[0][0] in sum_dict) and (node.args[0][1]) in sum_dict:
-                print(sum_dict)
                 with graph_module.graph.inserting_before(node):
                     new_node = graph_module.graph.create_node(
                         op="call_function",
@@ -93,11 +101,26 @@ class FusedMulSumCat(Pattern):
                 node.replace_all_uses_with(new_node)
                 graph_module.graph.erase_node(node)
                 changed = True
-                print("JYJ")
+            elif (len(node.args[0]) > 2) and all(x in sum_dict for x in node.args[0]):
+                ordered_args = []
+                for i in range(2):
+                    for k in sum_dict:
+                        ordered_args.append(sum_dict[k][i])
+                if check_all_shapes_equal(ordered_args):
+                    with graph_module.graph.inserting_before(node):
+                        new_node = graph_module.graph.create_node(
+                            op="call_function",
+                            target=mul_sum_cat_pattern,
+                            args=(ordered_args, int(len(ordered_args)/2)),
+                            name=f"fused_mul_sum_cat_{node.name}",
+                        )
+                    node.replace_all_uses_with(new_node)
+                    graph_module.graph.erase_node(node)
+                    changed = True
+                else:
+                    continue
             else:
                 continue
-
-                
 
         print(graph_module.graph)
         graph_module.graph.lint()
