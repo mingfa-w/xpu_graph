@@ -35,11 +35,11 @@ def matmul_test(xpu_graph_backend, func):
 class TestMatMul:
     def setup_class(self):
         infer_config = xpu_graph.XpuGraphConfig(
-            is_training=False, opt_level=OptLevel.level2
+            is_training=False
         )
         self.infer_backend = xpu_graph.XpuGraph(infer_config)
         train_config = xpu_graph.XpuGraphConfig(
-            is_training=True, opt_level=OptLevel.level2
+            is_training=True
         )
         self.train_backend = xpu_graph.XpuGraph(train_config)
 
@@ -58,12 +58,12 @@ class TestMatMul:
 
 if __name__ == "__main__":
     infer_config = xpu_graph.XpuGraphConfig(
-        is_training=False, opt_level=OptLevel.level2, debug=True
+        is_training=False, vendor_compiler_config=None
     )
     infer_backend = xpu_graph.XpuGraph(infer_config)
     matmul_test(infer_backend, fn0)
     train_config = xpu_graph.XpuGraphConfig(
-        is_training=True, opt_level=OptLevel.level2, debug=True
+        is_training=True, vendor_compiler_config=None
     )
     train_backend = xpu_graph.XpuGraph(train_config)
     matmul_test(train_backend, fn0)
