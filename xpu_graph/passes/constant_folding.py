@@ -1,12 +1,15 @@
-from xpu_graph.passes.optimizer import Optimizer
+from typing import Any
 
 import torch
-import torch.utils._pytree as pytree
+from torch.utils._pytree import tree_flatten, tree_unflatten
+from torch import SymBool, SymInt, SymFloat
 import torch.fx as fx
 
+from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.config import OptLevel
 from xpu_graph.utils import logger
-from xpu_graph.constant_manager import get_constant_manager, is_constant
+from xpu_graph.constant_manager import get_constant_manager
+from xpu_graph.fx_utils import get_disable_fake_mode_handler
 
 __all__ = ["ConstantFolding"]
 
@@ -22,11 +25,48 @@ def _no_folding(node: fx.Node):
 
 class ConstantFolding(Optimizer):
 
-    def __init__(self):
+    def __init__(self, config):
         super().__init__()
+        self._is_training = config.is_training
 
-    def _all_input_constant(self, node: fx.Node):
-        return all(is_constant(arg) for arg in node.args)
+    def _is_constant(self, arg: Any, gm: fx.GraphModule):
+        if isinstance(arg, fx.Node):
+            # Note: For safety, bypass all parameters when is training.
+            if self._is_training:
+                if arg.op != "get_attr":
+                    return False
+                assert hasattr(gm, arg.target)
+                return not isinstance(getattr(gm, arg.target), torch.nn.Parameter)
+            return arg.op == "get_attr"
+        if type(arg) in (SymBool, SymInt, SymFloat):
+            return False
+        return True
+
+    def _all_inputs_constant(self, node: fx.Node, gm: fx.GraphModule):
+        flattern_args, _ = tree_flatten(node.args)
+        flattern_kargs, _ = tree_flatten(node.kwargs)
+
+        return all(self._is_constant(arg, gm) for arg in flattern_args + flattern_kargs)
+
+    def _get_real_inputs(self, node: fx.Node, gm: fx.GraphModule):
+        flattern_args, args_spec = tree_flatten(node.args)
+        flattern_kwargs, kwargs_spec = tree_flatten(node.kwargs)
+
+        new_flattern_args = flattern_args[:]
+        new_flattern_kwargs = flattern_kwargs[:]
+
+        for args, new_args in zip(
+            [flattern_args, flattern_kwargs], [new_flattern_args, new_flattern_kwargs]
+        ):
+            for i, arg in enumerate(args):
+                if isinstance(arg, fx.Node):
+                    assert arg.op == "get_attr"
+                    assert hasattr(gm, arg.target)
+                    new_args[i] = getattr(gm, arg.target)
+
+        return tree_unflatten(new_flattern_args, args_spec), tree_unflatten(
+            new_flattern_kwargs, kwargs_spec
+        )
 
     def process(self, gm: torch.fx.GraphModule):
         changed = False
@@ -46,27 +86,16 @@ class ConstantFolding(Optimizer):
                 continue
             if _no_folding(node):
                 continue
-            if self._all_input_constant(node):
+            if self._all_inputs_constant(node, gm):
                 changed = True
-                new_args = (getattr(gm, arg.target) for arg in node.args)
-
-                diable_fake_mode = None
-                from packaging import version
-
-                torch_version = version.parse(torch.__version__[:5])
-                if torch_version < version.parse("2.5"):
-                    from torch.fx.experimental.proxy_tensor import (
-                        maybe_disable_fake_tensor_mode as diable_fake_mode,
-                    )
-                else:
-                    from torch._subclasses.fake_tensor import (
-                        unset_fake_temporarily as diable_fake_mode,
-                    )
 
                 logger.info(f"start constant folding: {node.name} {node.target}")
 
-                with diable_fake_mode():
-                    constant_value = node.target(*new_args, **node.kwargs)
+                real_args, real_kwargs = self._get_real_inputs(node, gm)
+
+                disable_fake_mode = get_disable_fake_mode_handler()
+                with disable_fake_mode():
+                    constant_value = node.target(*real_args, **real_kwargs)
 
                 constant_name = node.name + "_constant_folding"
                 constant_name = get_constant_manager(gm).register_constant(
@@ -76,7 +105,7 @@ class ConstantFolding(Optimizer):
                     constant_node = graph.create_node("get_attr", constant_name)
                     node.replace_all_uses_with(constant_node)
 
-                logger.debug(f"constant folding graph: {graph}")
+        changed = get_constant_manager(gm).remove_redundant_constants() or changed
 
         gm.graph.lint()
 

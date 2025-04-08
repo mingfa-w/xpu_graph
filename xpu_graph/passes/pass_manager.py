@@ -1,6 +1,7 @@
 import torch
 import torch.fx as fx
 from xpu_graph.fx_utils import FxStage
+from xpu_graph.constant_manager import get_constant_manager
 
 
 class PassManager:
@@ -30,7 +31,7 @@ class PassManager:
         if config.constant_folding:
             from .constant_folding import ConstantFolding
 
-            self._passes.append(ConstantFolding())
+            self._passes.append(ConstantFolding(config))
 
         self._passes.append(self._pattern_manager)
 

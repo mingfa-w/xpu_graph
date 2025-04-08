@@ -88,7 +88,7 @@ def unlift_exported_gm(mod, gm, graph_signature, freeze=True):
     _insert_copy_for_mutations(
         gm, mutated_outputs, unlifted_name_to_node, input_name_to_node
     )
-    
+
     gm.graph.lint()
     gm.recompile()
 
@@ -126,3 +126,19 @@ def trace_and_inline(
         return rets.node
 
     return inliner
+
+
+def get_disable_fake_mode_handler():
+    diable_fake_mode = None
+    from packaging import version
+
+    torch_version = version.parse(torch.__version__[:5])
+    if torch_version < version.parse("2.5"):
+        from torch.fx.experimental.proxy_tensor import (
+            maybe_disable_fake_tensor_mode as diable_fake_mode,
+        )
+    else:
+        from torch._subclasses.fake_tensor import (
+            unset_fake_temporarily as diable_fake_mode,
+        )
+    return diable_fake_mode
