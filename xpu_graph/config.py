@@ -9,6 +9,7 @@ class Target(Enum):
     ascend = "ascend"
     mlu = "mlu"
     none = "none"
+    npu = "npu"
 
 
 @total_ordering
