@@ -116,8 +116,6 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
         
 class ShortCutGatherModule(torch.nn.Module):
     def forward(self, input_tensor, dim, prefix_len):
-        if not (1 < len(input_tensor.shape) < 4):
-            raise NotImplementedError("input must be 2d or 3d")
         return torch.ops.torch_npu_triton.shortcut_gather(
             input_tensor,
             dim,

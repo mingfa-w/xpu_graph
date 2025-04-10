@@ -19,10 +19,11 @@ def find_gather_nodes(graph_module):
             continue
         if node.args[1] == 0:
             continue # not support gather dim 0
+        if not (1 < len(node.args[0].meta["tensor_meta"].shape) < 4):
+            # NotImplementedError("input must be 2d or 3d")
+            continue
         candi_nodes.append(node)
     return candi_nodes
-
-
 
 
 # This pattern is for gather ops whose gather dim's indices is generated from 'iota'
