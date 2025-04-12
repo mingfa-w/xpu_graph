@@ -6,7 +6,7 @@ import triton.language as tl
 
 from torch.library import Library, impl
 from xpu_graph.passes.patterns.targets.npu.triton_kernel import npu_def, npu_lib, npu_meta
-
+from xpu_graph.config import Multiflow
 
 @triton.jit
 def do_special_slice_cat(
@@ -37,6 +37,7 @@ def npu_triton_slice_cat_kernel_4_qianchuan(
     in_16_offs_ptr,out_16_offs_ptr,
     in_32_offs_ptr,out_32_offs_ptr,
     in_64_offs_ptr,out_64_offs_ptr,
+    flow_p_len: tl.constexpr, grid_flow: tl.constexpr,
     stride : tl.constexpr,
     output_xnumel : tl.constexpr,
     cnt_1 : tl.constexpr,
@@ -52,27 +53,31 @@ def npu_triton_slice_cat_kernel_4_qianchuan(
     sz_32 : tl.constexpr = 32,
     sz_64 : tl.constexpr = 64,
 ):
-    row_id = tl.program_id(0)
-    cur_data_ptr = data_ptr + row_id * stride
-    cur_out_ptr = out_ptr + row_id * output_xnumel
+    pbegin = tl.program_id(0) * flow_p_len
+    pend = min(pbegin+flow_p_len,grid_flow)
+    for pid in range(pbegin, pend):
+        row_id = pid
+        # row_id = tl.program_id(0)
+        cur_data_ptr = data_ptr + row_id * stride
+        cur_out_ptr = out_ptr + row_id * output_xnumel
 
-    if cnt_1 > 0:
-        do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_1_offs_ptr,out_1_offs_ptr,cnt_1,sz_1)
-    
-    if cnt_4 > 0:
-        do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_4_offs_ptr,out_4_offs_ptr,cnt_4,sz_4)
-    
-    if cnt_8 > 0:
-        do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_8_offs_ptr,out_8_offs_ptr,cnt_8,sz_8)
+        if cnt_1 > 0:
+            do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_1_offs_ptr,out_1_offs_ptr,cnt_1,sz_1)
+        
+        if cnt_4 > 0:
+            do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_4_offs_ptr,out_4_offs_ptr,cnt_4,sz_4)
+        
+        if cnt_8 > 0:
+            do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_8_offs_ptr,out_8_offs_ptr,cnt_8,sz_8)
 
-    if cnt_16 > 0:
-        do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_16_offs_ptr,out_16_offs_ptr,cnt_16,sz_16)
+        if cnt_16 > 0:
+            do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_16_offs_ptr,out_16_offs_ptr,cnt_16,sz_16)
 
-    if cnt_32 > 0:
-        do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_32_offs_ptr,out_32_offs_ptr,cnt_32,sz_32)
+        if cnt_32 > 0:
+            do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_32_offs_ptr,out_32_offs_ptr,cnt_32,sz_32)
 
-    if cnt_64 > 0:
-        do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_64_offs_ptr,out_64_offs_ptr,cnt_64,sz_64)
+        if cnt_64 > 0:
+            do_special_slice_cat(cur_data_ptr,cur_out_ptr,in_64_offs_ptr,out_64_offs_ptr,cnt_64,sz_64)
 
 
 npu_def.define((
@@ -127,7 +132,13 @@ def fused_slice_cat(
 
     output_tensor = torch.empty(n_rows, output_xnumel, device=input_tensor.device, dtype=input_tensor.dtype)
 
-    npu_triton_slice_cat_kernel_4_qianchuan[n_rows,1,1](
+    # grid = (n_rows,1,1)
+    GRID_CNT = Multiflow.AivNum // Multiflow.FlowNum
+    grid_flow = n_rows
+    flow_p_len = (grid_flow - 1) // GRID_CNT + 1
+    grid = (GRID_CNT, 1, 1)
+    
+    npu_triton_slice_cat_kernel_4_qianchuan[grid](
         input_tensor,output_tensor,
         in_offs_ptr0,out_offs_ptr0,
         in_offs_ptr1,out_offs_ptr1,
@@ -135,6 +146,7 @@ def fused_slice_cat(
         in_offs_ptr3,out_offs_ptr3,
         in_offs_ptr4,out_offs_ptr4,
         in_offs_ptr5,out_offs_ptr5,
+        flow_p_len, grid_flow,
         stride=stride,
         output_xnumel=output_xnumel,
         cnt_1=cnt_1,
