@@ -129,9 +129,7 @@ from torch.library import Library, impl
 from xpu_graph.passes.patterns.targets.npu.triton_kernel import npu_def, npu_lib, npu_meta
 npu_def.define("fuse_sum_cat_2d(Tensor[] inputs, Tensor lengths_tensor, int dim_0, int block_size) -> (Tensor)")
 
-# @torch.library.custom_op(
-#     "torch_npu_triton::fuse_sum_cat_2d", mutates_args={}, device_types="npu"
-# )
+
 @impl(npu_lib, "fuse_sum_cat_2d")
 def fuse_sum_cat_2d(
     inputs: List[torch.Tensor],
@@ -156,25 +154,11 @@ def fuse_sum_cat_2d(
     )
 
     grid = lambda meta: (
-        # min(
-            
-        #     torch.npu.get_device_properties(0).multi_processor_count,
-        # ),
         triton.cdiv(dim_0, meta["BLOCK_BATCH"])
     )
-    # npu_triton_sum_cat_2d_kernel[grid](
-    #     input_tensor,
-    #     output_tensor,
-    #     lengths_tensor,
-    #     dim_0,
-    #     len(inputs),
-    #     BLOCK_SIZE=block_size,
-    #     DTYPE=dtype_dict1[dtype],
-    # )
     return output_tensor
 
 
-# @fuse_sum_cat_2d.register_fake
 @impl(npu_meta, "fuse_sum_cat_2d")
 def fuse_sum_cat_2d_fake(
     inputs: List[torch.Tensor],
@@ -188,9 +172,7 @@ def fuse_sum_cat_2d_fake(
 
 npu_def.define("fuse_sum_cat_3d(Tensor[] inputs, int dim_0, Tensor dim_1_tensor, int dim_2, int num_tensors, int max_sequence_length) -> (Tensor)")
 
-# @torch.library.custom_op(
-#     "torch_npu_triton::fuse_sum_cat_3d", mutates_args=(), device_types="npu"
-# )
+
 @impl(npu_lib, "fuse_sum_cat_3d")
 def fuse_sum_cat_3d(
     inputs: List[torch.Tensor],
@@ -213,10 +195,6 @@ def fuse_sum_cat_3d(
 
     BLOCK_BATCH = 3
     grid_1 = math.ceil(dim_0 / BLOCK_BATCH)
-    # min(
-    #     math.ceil(dim_0 / BLOCK_BATCH),
-    #     torch.npu.get_device_properties(0).multi_processor_count,
-    # )
     grid = (grid_1, 1, 1)
     npu_triton_sum_cat_3d_kernel[grid](
         tensor_ptrs,
@@ -232,7 +210,6 @@ def fuse_sum_cat_3d(
     return output_tensor
 
 
-# @fuse_sum_cat_3d.register_fake
 @impl(npu_meta, "fuse_sum_cat_3d")
 def fuse_sum_cat_3d_fake(
     inputs: List[torch.Tensor],

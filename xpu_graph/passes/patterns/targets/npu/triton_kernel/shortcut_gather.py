@@ -12,7 +12,6 @@ def npu_shortcut_gather_3D_dim1_prefix(in_ptr, out_ptr, flow_p_len: tl.constexpr
     pend = min(pbegin+flow_p_len,grid_flow)
     for pid in range(pbegin, pend):
         poffset = pid * PBLOCK
-        # poffset = tl.program_id(0) * PBLOCK
         pidx = tl.arange(0, PBLOCK)[:,None,None] + poffset
         xidx = tl.arange(0, XBLOCK)[None,:,None]
         ridx = tl.arange(0, rnumel)[None,None,:]
@@ -33,7 +32,6 @@ def npu_shortcut_gather_2D_dim1_prefix(in_ptr, out_ptr, flow_p_len: tl.constexpr
     pend = min(pbegin+flow_p_len,grid_flow)
     for pid in range(pbegin, pend):
         poffset = pid * PBLOCK
-        # poffset = tl.program_id(0) * PBLOCK
         pidx = tl.arange(0, PBLOCK)[:,None] + poffset
         xidx = tl.arange(0, XBLOCK)[None,:]
         
@@ -69,7 +67,6 @@ def shortcut_gather(
 ) -> torch.Tensor:
     num_batch = input_tensor.shape[0]
     pblock = 4
-    # grid = ((num_batch - 1) // pblock + 1, 1, 1)
     GRID_CNT = Multiflow.AivNum // Multiflow.FlowNum
     grid_flow = (num_batch - 1) // pblock + 1
     flow_p_len = (grid_flow - 1) // GRID_CNT + 1
@@ -106,7 +103,6 @@ def shortcut_gather(
     return output_tensor
 
 
-# @shortcut_gather.register_fake
 @impl(npu_meta, "shortcut_gather")
 def shortcut_gather_fake(
     input_tensor: torch.Tensor,

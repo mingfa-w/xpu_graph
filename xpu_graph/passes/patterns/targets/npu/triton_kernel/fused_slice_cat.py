@@ -57,7 +57,6 @@ def npu_triton_slice_cat_kernel_4_qianchuan(
     pend = min(pbegin+flow_p_len,grid_flow)
     for pid in range(pbegin, pend):
         row_id = pid
-        # row_id = tl.program_id(0)
         cur_data_ptr = data_ptr + row_id * stride
         cur_out_ptr = out_ptr + row_id * output_xnumel
 
@@ -132,7 +131,6 @@ def fused_slice_cat(
 
     output_tensor = torch.empty(n_rows, output_xnumel, device=input_tensor.device, dtype=input_tensor.dtype)
 
-    # grid = (n_rows,1,1)
     GRID_CNT = Multiflow.AivNum // Multiflow.FlowNum
     grid_flow = n_rows
     flow_p_len = (grid_flow - 1) // GRID_CNT + 1
@@ -165,7 +163,6 @@ def fused_slice_cat(
 
     return output_tensor
 
-#@fused_slice_cat.register_fake
 @impl(npu_meta, "fused_slice_cat")
 def fused_slice_cat_fake(
     input_tensor,n_rows,
