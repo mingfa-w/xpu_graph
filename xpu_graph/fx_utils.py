@@ -32,8 +32,12 @@ def unlift_exported_gm(mod, gm, graph_signature, freeze=True):
         The unlifted GraphModule
     """
     # Build state dictionary from parameters and buffers
-    #lazy import 
-    from torch.export._unlift import _unlift_inputs_as_getattr, _insert_copy_for_mutations
+    # lazy import
+    from torch.export._unlift import (
+        _unlift_inputs_as_getattr,
+        _insert_copy_for_mutations,
+    )
+
     if freeze:
         # Assign parameters to the graph module
         for name, param in mod.named_parameters(remove_duplicate=False):
@@ -88,7 +92,7 @@ def unlift_exported_gm(mod, gm, graph_signature, freeze=True):
     _insert_copy_for_mutations(
         gm, mutated_outputs, unlifted_name_to_node, input_name_to_node
     )
-    
+
     gm.graph.lint()
     gm.recompile()
 
@@ -126,3 +130,13 @@ def trace_and_inline(
         return rets.node
 
     return inliner
+
+
+def decompose_for_inductor(gm, fake_inputs):
+    gm = make_fx(
+        gm,
+        decomposition_table=torch._inductor.decomposition.select_decomp_table(),
+        tracing_mode="fake",
+        record_module_stack=True,
+    )(*fake_inputs)
+    return gm

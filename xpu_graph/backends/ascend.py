@@ -1,7 +1,7 @@
 import torch
 import torch.fx as fx
 
-def ascend_compile(module: torch.nn.Module, example_inputs) -> torch.nn.Module:
+def ascend_compile(module: torch.nn.Module, example_inputs, **kwargs) -> torch.nn.Module:
     torch.npu.set_compile_mode(jit_compile=False)
 
     import torchair as tng
