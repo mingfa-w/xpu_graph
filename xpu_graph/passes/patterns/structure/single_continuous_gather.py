@@ -20,7 +20,7 @@ def find_gather_nodes(graph_module):
         if node.args[1] == 0:
             continue # not support gather dim 0
         if not (1 < len(node.args[0].meta["tensor_meta"].shape) < 4):
-            # NotImplementedError("input must be 2d or 3d")
+            # node input must be 2d or 3d, check during xpu_graph compilation
             continue
         candi_nodes.append(node)
     return candi_nodes
