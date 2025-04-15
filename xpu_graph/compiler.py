@@ -10,10 +10,9 @@ from .passes.pass_manager import PassManager
 from .passes.patterns.pattern import Pattern
 from .config import XpuGraphConfig, Target, OptLevel
 from .utils import logger, setup_logger, local_logger, get_nodes_statistics
-from .cache import XpuGraphCache, default_cache
-from .fx_utils import FxStage, unlift_exported_gm
+from .cache import XpuGraphCache, default_cache, SerializeWrapper
+from .fx_utils import FxStage, unlift_exported_gm, decompose_for_inductor
 import logging
-from functools import partial
 
 
 def optimize_graph(gm, sample_inputs, config=None):
@@ -116,13 +115,11 @@ class XpuGraph:
                     hashkey = self._cache.cache_key(
                         gm, fake_inputs, self._config, stage
                     )
-                    xpu_compiled = self._cache.load_gm(hashkey)
-                    if xpu_compiled is None:
-                        xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
-                        if self._config.target != Target("ascend"):
-                            xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
-                else:
-                    xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
+                    cached_compiled = self._cache.load_gm(hashkey)
+                    if cached_compiled is not None:
+                        return cached_compiled
+
+                xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
 
                 with local_logger("after"):
                     logger.info("xpu_graph passes complete")
@@ -131,19 +128,27 @@ class XpuGraph:
                     )
                     logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
 
-                if stage == FxStage.pregrad:
-                    return xpu_compiled
-
-                if self._config.vendor_compiler_config:
-
+                if stage != FxStage.pregrad and self._config.vendor_compiler_config:
+                    xpu_compiled = decompose_for_inductor(xpu_compiled, fake_inputs)
+                    extra_kwargs = {}
+                    if stage == FxStage.inference:
+                        extra_kwargs["is_inference"] = True
+                    elif stage == FxStage.backward:
+                        extra_kwargs["is_backward"] = True
                     from .backends import vendor_compiler
 
-                    return vendor_compiler(
+                    xpu_compiled = vendor_compiler(
                         xpu_compiled,
                         fake_inputs,
                         self._config.target,
                         self._config.vendor_compiler_config,
+                        **extra_kwargs,
                     )
+
+                xpu_compiled = SerializeWrapper(xpu_compiled)
+
+                if self._config.enable_cache:
+                    xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
 
             return xpu_compiled
 
