@@ -329,3 +329,13 @@ def _insert_mutations(gm, fw_metadata, input_nodes):
         new_output.meta.update(output_node.meta)
         output_node.replace_all_uses_with(new_output)
         gm.graph.erase_node(output_node)
+
+
+def decompose_for_inductor(gm, fake_inputs):
+    gm = make_fx(
+        gm,
+        decomposition_table=torch._inductor.decomposition.select_decomp_table(),
+        tracing_mode="fake",
+        record_module_stack=True,
+    )(*fake_inputs)
+    return gm
