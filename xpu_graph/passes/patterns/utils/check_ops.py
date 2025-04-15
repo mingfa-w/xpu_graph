@@ -199,11 +199,13 @@ def check_view(node):
 
 
 def check_softmax_op(node: fx.Node) -> bool:
-    if (not check_op(node, torch.ops.aten._safe_softmax.default)) and (
-        not check_op(node, torch.ops.aten._softmax.default)
-    ):
-        return False
-    return True
+    try:
+        if check_op(node, torch.ops.aten._safe_softmax.default):
+            return True
+    except:
+        if check_op(node, torch.ops.aten._softmax.default):
+            return True
+    return False
 
 
 def check_cat_op(node: fx.Node):
@@ -314,3 +316,9 @@ def check_squeeze_op(node: fx.node) -> bool:
 
 def check_expand_op(node: fx.node) -> bool:
     return check_op(node, torch.ops.aten.expand.default)
+
+def check_npu_dtype_cast_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.npu.npu_dtype_cast.default)
+
+def check_rsub_scalar_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.rsub.Scalar)
