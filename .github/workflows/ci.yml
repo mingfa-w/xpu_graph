@@ -10,8 +10,8 @@ defaults:
     shell: bash
 jobs:
   run-tests:
-    name: Run xpu_graph tests
-    runs-on: self-hosted
+    name: Run MLU tests
+    runs-on: MLU
     steps:
       - uses: actions/checkout@v4
       - name: Running mlu tests
