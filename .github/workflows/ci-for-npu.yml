@@ -31,4 +31,4 @@ jobs:
         shell: bash
         run: |
           echo "Running npu tests..."
-          python3 -m pytest --ignore=tests tests
+          python3 -m pytest --ignore=tests/mlu --ignore=tests/xpu_ops tests
