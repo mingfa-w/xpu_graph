@@ -5,7 +5,9 @@ import torch_mlu
 from .triton_kernel.fused_slice import (
     fused_slice_low,
 )
-
+from .triton_kernel.fused_slice_v2 import (
+    fused_slice_low_v2,
+)
 from .triton_kernel.fused_slice_cat import (
     fused_slice_cat,
 )
@@ -38,6 +40,21 @@ class FuseSliceModule(torch.nn.Module):
         )
         return output.view(len(slices_index), input_tensor.shape[0], slice_len)
 
+class FuseSliceV2Module(torch.nn.Module):
+    def forward(self, input_tensor, slices_index, slice_lens):
+        if len(input_tensor.shape) != 2:
+            raise NotImplementedError("input must be 2d")
+        slices_index = torch.tensor(
+            slices_index, dtype=torch.int32, device=input_tensor.device
+        )
+        outputs = fused_slice_low_v2(
+            input_tensor,
+            slices_index,
+            slice_lens,
+        )
+        return outputs
+
+
 
 class FuseSliceCatSameInputModule(torch.nn.Module):
     def forward(self, input_tensor, slices):
@@ -62,6 +79,7 @@ def get_structure_replacements():
     return {
         "FusedRMSNorm": RMSNormModule,
         "FusedSlice": FuseSliceModule,
+        "FusedSliceV2": FuseSliceV2Module,
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedMultipleSliceCat": FuseSliceCatSameInputModule,
     }
