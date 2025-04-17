@@ -10,6 +10,10 @@ from .triton_kernel.fused_slice_cat import (
     fused_slice_cat,
 )
 
+from .triton_kernel.fused_slice_v2 import (
+    fused_slice_low_v2,
+)
+
 class RMSNormModule(torch.nn.Module):
     def forward(self, inputs, weights, epsilon):
         import torch_mlu_ops
@@ -20,12 +24,6 @@ class RMSNormModule(torch.nn.Module):
 
 class FuseSliceModule(torch.nn.Module):
     def forward(self, input_tensor, slices_index, slice_len):
-        if len(input_tensor.shape) != 2:
-            raise NotImplementedError("input must be 2d")
-        if slice_len > input_tensor.shape[-1]:
-            raise NotImplementedError(
-                f"inputshape {input_tensor.shape} don't support slice_len:{slice_len}"
-            )
         slices_index = torch.tensor(
             slices_index, dtype=torch.int32, device=input_tensor.device
         )
@@ -56,6 +54,41 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
             input_tensor.stride(0),
         )
 
+class FuseSliceCatSameInputModule_v2(torch.nn.Module):
+    def forward(self, input_tensor, many_slices):
+        if len(input_tensor.shape) != 2:
+            raise NotImplementedError("input must be 2d")
+        indices = []
+        total_output = []
+        slices_index = [0]
+        for slices in many_slices:
+            sum_ = 0 
+            for slice_ in slices:
+                start, end = slice_
+                indices += range(start, end)
+                sum_ += (end - start)
+            slices_index.append(sum_ + slices_index[-1])
+            total_output.append(sum_)
+        indices_tensor = torch.tensor(indices, dtype=torch.int32, device = input_tensor.device)
+        
+        output_total = fused_slice_cat(
+            input_tensor,
+            indices_tensor,
+            input_tensor.shape[0],
+            len(indices),
+            input_tensor.stride(0),
+            16384,  # blocksize
+        )
+
+        slices_index = torch.tensor(
+            slices_index[:-1], dtype=torch.int32, device=input_tensor.device
+        )
+        outputs = fused_slice_low_v2(
+            output_total,
+            slices_index,
+            total_output,
+        )
+        return outputs
 
 def get_structure_replacements():
     return {
@@ -63,5 +96,5 @@ def get_structure_replacements():
         "FusedSlice": FuseSliceModule,
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedSliceStackSum": FuseSliceCatSameInputModule,
-        "FusedMultipleSliceCat": FuseSliceCatSameInputModule,
+        "FusedMultipleSliceCat": FuseSliceCatSameInputModule_v2,
     }
