@@ -9,9 +9,18 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 from .passes.pass_manager import PassManager
 from .passes.patterns.pattern import Pattern
 from .config import XpuGraphConfig, Target, OptLevel
-from .utils import logger, setup_logger, local_logger, get_nodes_statistics
+from .utils import (
+    logger,
+    setup_logger,
+    local_logger,
+    NodesStatistics,
+)
 from .cache import XpuGraphCache, default_cache, SerializeWrapper
-from .fx_utils import FxStage, unlift_exported_gm, decompose_for_inductor
+from .fx_utils import (
+    FxStage,
+    unlift_exported_gm,
+    decompose_for_inductor,
+)
 import logging
 
 
@@ -79,6 +88,8 @@ class XpuGraph:
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, sample_inputs, stage: FxStage):
 
+            nodes_statistics = NodesStatistics()
+
             # Create fake inputs for optimization
             from torch._guards import detect_fake_mode
 
@@ -90,13 +101,6 @@ class XpuGraph:
             ]
 
             with fake_mode:
-                with local_logger("before"):
-                    logger.info(
-                        f"before xpu_graph, nodes statistics: {get_nodes_statistics(gm)}"
-                    )
-                    logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
-                    logger.info(f"xpu_graph passes start {stage}...")
-
                 if stage == FxStage.pregrad:
                     logger.debug(f"before decompose: graph like:\n {gm.graph}")
                     logger.info("decompose graph start...")
@@ -118,15 +122,19 @@ class XpuGraph:
                     cached_compiled = self._cache.load_gm(hashkey)
                     if cached_compiled is not None:
                         return cached_compiled
+                with local_logger("before"):
+                    logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
+                    logger.info(f"xpu_graph passes start {stage}...")
 
+                nodes_statistics.insert_statistics("before xpu_graph", gm)
                 xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
+                nodes_statistics.insert_statistics("after xpu_graph", xpu_compiled)
 
                 with local_logger("after"):
                     logger.info("xpu_graph passes complete")
-                    logger.info(
-                        f"after xpu_graph, nodes statistics: \n{get_nodes_statistics(xpu_compiled)}"
-                    )
                     logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
+
+                logger.info(f"node statistic: {str(nodes_statistics)}")
 
                 if stage != FxStage.pregrad and self._config.vendor_compiler_config:
                     xpu_compiled = decompose_for_inductor(xpu_compiled, fake_inputs)

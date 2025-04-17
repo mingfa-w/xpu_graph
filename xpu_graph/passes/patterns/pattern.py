@@ -24,7 +24,7 @@ class PatternGroup(Enum):
 
 
 class Pattern(Optimizer):
-    _opt_level = OptLevel.level0
+    _opt_level = OptLevel.level1
     _pattern_group = PatternGroup.GROUP0
     _stages = [FxStage.inference]
 
