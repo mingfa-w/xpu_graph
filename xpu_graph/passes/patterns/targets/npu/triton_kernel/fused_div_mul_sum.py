@@ -4,7 +4,7 @@ import triton
 import triton.language as tl
 
 @triton.jit
-def npu_triton_fused_div_mul_sum_kernel(
+def fused_div_mul_sum_kernel(
         out_ptr0, in_ptr0, in_ptr1, in_ptr2, in_ptr3,
         XBLOCK0: tl.constexpr, XBLOCK0_SUB: tl.constexpr,
         XBLOCK1: tl.constexpr, XBLOCK1_SUB: tl.constexpr,
@@ -69,7 +69,7 @@ def fused_div_mul_sum(
     N4 = div1_input.shape[4]
     output_tensor = torch.empty((N0, N1, N2, N3), device=div1_input.device, dtype=div1_input.dtype)
     core_scale = 4
-    npu_triton_fused_div_mul_sum_kernel[N0 * core_scale, 1, 1](
+    fused_div_mul_sum_kernel[N0 * core_scale, 1, 1](
         output_tensor, div1_input, div1_divisor, div2_input, div2_divisor,
         XBLOCK0 = N1, XBLOCK0_SUB = N1,
         XBLOCK1 = (N2+core_scale-1)//core_scale, XBLOCK1_SUB = 2,

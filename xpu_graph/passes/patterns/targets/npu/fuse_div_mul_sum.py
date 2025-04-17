@@ -13,6 +13,31 @@ from ...utils.check_ops import (
     check_sum_op,
 )
 
+"""
+inputs:
+N0, N1, N2, N3, N4 = 10, 15, 255, 4, 128
+DTYPE = torch.float32
+arg48_1 = torch.randn((N0, N1, N3, N4), dtype=DTYPE, device=DEV)
+unsqueeze_2 = torch.ops.aten.unsqueeze.default(arg48_1, 2)
+arg49_1 = torch.randn((N0, N2, N3, N4), dtype=DTYPE, device=DEV)
+unsqueeze_3 = torch.ops.aten.unsqueeze.default(arg49_1, 1)
+clamp_min =  torch.randn((N0, N1, 1, N3, 1), dtype=DTYPE, device=DEV)
+clamp_min_1 =  torch.randn((N0, 1, N2, N3, 1), dtype=DTYPE, device=DEV)
+
+outputs:
+mul_2 = torch.zeros((N0, N1, N2, N3), device=DEV, dtype=DTYPE)
+
+def torch_func(unsqueeze_2, clamp_min, unsqueeze_3, clamp_min_1):
+    expand = torch.ops.aten.expand.default(clamp_min, [N0, N1, 1, N3, N4])
+    expand_1 = torch.ops.aten.expand.default(clamp_min_1, [N0, 1, N2, N3, N4])
+    div = torch.ops.aten.div.Tensor(unsqueeze_2, expand)
+    div_1 = torch.ops.aten.div.Tensor(unsqueeze_3, expand_1)
+    mul_1 = torch.ops.aten.mul.Tensor(div, div_1)
+    sum_3 = torch.ops.aten.sum.dim_IntList(mul_1, [4])
+    mul_2 = torch.ops.aten.mul.Tensor(sum_3, 0.5)
+    return mul_2
+"""
+
 from .triton_kernel.fused_div_mul_sum import fused_div_mul_sum
 
 class DivMulSumOperation(nn.Module):

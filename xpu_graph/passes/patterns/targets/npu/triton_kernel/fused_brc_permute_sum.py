@@ -5,8 +5,8 @@ import triton.language as tl
 import triton.language.math as tl_math
 
 @triton.jit
-def npu_triton_fused_brc_permute_sum_kernel(
-        out_ptr0, in_ptr0, in_ptr1, in_ptr2, in_ptr3, x4: tl.constexpr,
+def fused_brc_permute_sum_kernel(
+        out_ptr0, in_ptr0, in_ptr1, in_ptr2, in_ptr3, X4: tl.constexpr,
         XBLOCK0: tl.constexpr, XBLOCK0_SUB: tl.constexpr,
         XBLOCK1: tl.constexpr, XBLOCK1_SUB: tl.constexpr,
         PBLOCK: tl.constexpr, RBLOCK: tl.constexpr,
@@ -26,7 +26,6 @@ def npu_triton_fused_brc_permute_sum_kernel(
     x1_sub_idx = tl.arange(0, XBLOCK1_SUB)
     x_sub_loops = (XBLOCK1 + XBLOCK1_SUB - 1) // XBLOCK1_SUB
     p_sub_loops = (PSIZE + PBLOCK - 1) // PBLOCK
-    # x4 = tl.load(in_ptr4 + 0)
     for x_sub_id in tl.range(x_sub_loops):
         x0_idx = x0_pid * XBLOCK0 + 0 * XBLOCK0_SUB + x0_sub_idx
         x0pr_idx = x0_idx[:, None, None] * RSIZE + r_idx[None, None, :]
@@ -44,7 +43,7 @@ def npu_triton_fused_brc_permute_sum_kernel(
             tmp1 = tmp0.to(tl.float16)
             tmp2 = 1.0 - tmp1
             tmp3 = tmp2 != 0
-            tmp4 = tl.where(tmp3, x4, tmp2)
+            tmp4 = tl.where(tmp3, X4, tmp2)
             tmp5 = tl.permute(x2, (0, 2, 1))
             x1 = tl.load(in_ptr1 + x1pr_idx, mask=x1pr_mask, other=0.0)
             tmp6 = x1 + tmp5
@@ -82,9 +81,9 @@ def fused_brc_permute_sum(
     N3 = view_7.shape[3]
     CORE_SCALE = 4
     out = torch.empty((N0, N1, N2, N3), dtype=view_7.dtype, device=view_7.device)
-    npu_triton_fused_brc_permute_sum_kernel[N0 * CORE_SCALE, 1, 1](
+    fused_brc_permute_sum_kernel[N0 * CORE_SCALE, 1, 1](
         out, view_7, buf47, buf59, arg107_1,
-        x4 = buf61_val,
+        X4 = buf61_val,
         XBLOCK0 = 1, XBLOCK0_SUB = 1,
         XBLOCK1 = N1 // CORE_SCALE, XBLOCK1_SUB = 3,
         PBLOCK = 16, RBLOCK = N3,
