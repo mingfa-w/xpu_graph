@@ -1,14 +1,22 @@
 import os
 import hashlib
 import pickle
+from typing import Union
 from os import PathLike
 from .config import XpuGraphConfig
 from .utils import logger
 from .fx_utils import FxStage
 import torch
 from torch._dynamo.convert_frame import compile_lock
+from torch._dynamo.device_interface import get_interface_for_device
 from torch.utils._python_dispatch import _disable_current_modes
-from torch._inductor.codecache import CompiledFxGraph, PyCodeCache, get_path
+from torch._inductor.codecache import (
+    CompiledFxGraph,
+    PyCodeCache,
+    get_path,
+    FxGraphCache,
+)
+from torch._inductor.utils import BoxedBool
 from torch.fx import GraphModule, Graph, Node
 from torch.fx.node import map_aggregate
 import copy
@@ -39,9 +47,8 @@ def _get_target_function(fn_name: str):
 
 
 class SerializeWrapper(torch.nn.Module):
-    def __init__(self, compiled_fn):
+    def __init__(self, compiled_fn: Union[CompiledFxGraph, GraphModule]):
         super().__init__()
-        assert isinstance(compiled_fn, (CompiledFxGraph, GraphModule))
         self.wrapped_fn = compiled_fn
 
     def __reduce__(self):
@@ -94,8 +101,13 @@ class SerializeWrapper(torch.nn.Module):
             raise NotImplemented(f"Unsupported type: {type(object)} for {object}")
 
     def decode(cls, arg_tuple):
+        logger.info(f"Deserializing a {cls.__qualname__}")
         if cls == CompiledFxGraph:
             (compiled_fn,) = arg_tuple
+            # Torch Inductor config is lazy initialized. invoke it manually
+            for device in compiled_fn.device_types:
+                logger.debug(f"Check interface for device: {device}")
+                get_interface_for_device(device)
             path = get_path(compiled_fn.cache_key, "py")[2]
             compiled_fn.current_callable = PyCodeCache.load_by_key_path(
                 compiled_fn.cache_key,
@@ -103,6 +115,14 @@ class SerializeWrapper(torch.nn.Module):
                 compiled_fn.cache_linemap,
                 compiled_fn.constants,
             ).call
+            cudagraphs = compiled_fn.cudagraph_info is not None
+            logger.debug(f"Cudagraphs enabled: {cudagraphs}")
+            # Note: 
+            #   1. This post_compile function is only available on 2.5.x,
+            #      it may be in different locations in other versions
+            #   2. Example_inputs in post_compile actually leads to symint guards,
+            #      but we choose to not produce extra guards
+            FxGraphCache.post_compile(compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs))
             return SerializeWrapper(compiled_fn)
         elif cls == GraphModule:
             gm_dict, graph_meta, nodes_meta = arg_tuple
