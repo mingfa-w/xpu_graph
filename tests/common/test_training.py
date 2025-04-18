@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import xpu_graph
 from xpu_graph import OptLevel
-from xpu_graph.test_utils import is_similar
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
 from tests.common.test_models import all_models
 
@@ -12,7 +12,7 @@ device = "cpu"
 data_type = torch.float32
 
 
-def compare_training(ModCls, backend, nsteps=4, bsz=8, input_dim=16):
+def compare_training(ModCls, backend, nsteps=10, bsz=8, input_dim=16):
     golden = ModCls(input_dim).to(device=device, dtype=data_type)
     compiled = ModCls(input_dim).to(device=device, dtype=data_type)
     compiled.forward = torch.compile(compiled.forward, backend=backend, dynamic=False)
@@ -48,7 +48,10 @@ def compare_training(ModCls, backend, nsteps=4, bsz=8, input_dim=16):
 class TestTraining:
     def setup_class(self):
         train_config = xpu_graph.XpuGraphConfig(
-            is_training=True, opt_level=OptLevel.level2, freeze=False
+            is_training=True,
+            opt_level=OptLevel.level2,
+            freeze=False,
+            debuggers=["autograd"],
         )
         self.train_backend = xpu_graph.XpuGraph(train_config)
 
@@ -56,13 +59,19 @@ class TestTraining:
         "ReproCls",
         all_models,
     )
-    def test_layernorm_patterns_with_loss_and_grad(self, ReproCls):
-        compare_training(ReproCls, self.train_backend)
+    def test_layernorm_patterns_with_loss_and_grad(self, caplog, ReproCls):
+        with need_xpu_graph_logs():
+            compare_training(ReproCls, self.train_backend)
+            assert "diverges" not in caplog.text
 
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
-        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=True
+        is_training=True,
+        opt_level=OptLevel.level2,
+        freeze=False,
+        debug=True,
+        debuggers=["autograd"],
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:

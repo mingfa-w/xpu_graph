@@ -151,7 +151,7 @@ class XpuGraph:
             # It's okay use optimized infer-graph for training as well
             logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
             logger.info("decompose graph start...")
-            dispatched_gm, fake_inputs = dispatch_graph(
+            dispatched_gm, fake_inputs, fw_metadata = dispatch_graph(
                 dynamo_gm, example_inputs, stage=FxStage.pregrad
             )
             logger.info("decompose graph complete")
@@ -163,10 +163,11 @@ class XpuGraph:
                 fw_compiler=_staged_compiler(FxStage.forward),
                 bw_compiler=_staged_compiler(FxStage.backward),
             )(pregrad_gm, fake_inputs)
+            xpu_gm = SerializeWrapper(xpu_gm)
         else:
             logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
             logger.info("decompose graph start...")
-            dispatched_gm, fake_inputs = dispatch_graph(
+            dispatched_gm, fake_inputs, fw_metadata = dispatch_graph(
                 dynamo_gm, example_inputs, stage=FxStage.inference
             )
             logger.info("decompose graph complete")
@@ -174,6 +175,16 @@ class XpuGraph:
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 
+        if self._config.debuggers and "autograd" in self._config.debuggers:
+            if fw_metadata.num_mutated_inp_runtime_indices > 0:
+                logger.warning(
+                    "The compiled graph has mutated inputs, and thus cannot be monitored by autograd monitor. This may be resulted from an inplace operation in your model. Modify it with an out-place version and try again."
+                )
+            else:
+                from xpu_graph.monitors import AutogradMonitor
+
+                monitor = AutogradMonitor(dynamo_gm)
+                monitor.guard(xpu_gm)
         return xpu_gm
 
     def get_pattern_manager(self):

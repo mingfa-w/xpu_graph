@@ -1,8 +1,11 @@
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
 import warnings
+import os
+import tempfile
+from .utils import logger
 
 
 class Target(Enum):
@@ -57,11 +60,17 @@ class XpuGraphConfig:
     # https://pytorch.org/docs/stable/torch.compiler_cudagraph_trees.html
     vendor_compiler_config: Optional[Dict[str, Any]] = None
 
+    # When in debug mode, users can configure debuggers for rutime debugging
+    debuggers: Optional[List[str]] = None
+
     def _reset_config_with_env(self):
         import os
 
         if os.getenv("XPUGRAPH_DEBUG") is not None:
             self.debug = os.getenv("XPUGRAPH_DEBUG", "0") == "1"  # 1: enable 0: disable
+
+        if self.debug and os.getenv("XPUGRAPH_DEBUGGERS") is not None:
+            self.debuggers = os.getenv("XPUGRAPH_DEBUGGERS").split(",")
 
         opt_level_env = os.getenv("XPUGRAPH_OPT_LEVEL", str(self.opt_level.value))
         if opt_level_env == "0":
@@ -91,3 +100,29 @@ class XpuGraphConfig:
                 )
             else:
                 self.vendor_compiler_config = {"mode": vendor_compiler_mode}
+
+
+cache_path = None
+
+
+def get_cache_dir():
+    global cache_path
+    if cache_path is None:
+        cache_path = os.getenv("XPUGRAPH_CACHE_DIR")
+        if cache_path is None:
+            cache_path = tempfile.mkdtemp(prefix="xpugraph_")
+            logger.debug(f"Use {cache_path} as default local cache")
+    return cache_path
+
+
+dump_path = None
+
+
+def get_dump_dir():
+    global dump_path
+    if dump_path is None:
+        dump_path = os.getenv("XPUGRAPH_DUMP_DIR")
+        if dump_path is None:
+            dump_path = tempfile.mkdtemp(prefix="xpugraph_")
+            logger.debug(f"Use {dump_path} as default dump path")
+    return dump_path

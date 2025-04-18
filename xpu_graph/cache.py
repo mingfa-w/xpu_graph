@@ -2,7 +2,7 @@ import os
 import hashlib
 import pickle
 from os import PathLike
-from .config import XpuGraphConfig
+from .config import XpuGraphConfig, get_cache_dir
 from .utils import logger
 from .fx_utils import FxStage
 import torch
@@ -41,7 +41,7 @@ def _get_target_function(fn_name: str):
 class SerializeWrapper(torch.nn.Module):
     def __init__(self, compiled_fn):
         super().__init__()
-        assert isinstance(compiled_fn, (CompiledFxGraph, GraphModule))
+        assert callable(compiled_fn)
         self.wrapped_fn = compiled_fn
 
     def __reduce__(self):
@@ -243,10 +243,5 @@ def no_cache():
 
 
 def default_cache():
-    cache_path = os.getenv("XPUGRAPH_CACHE_DIR")
-    if cache_path is None:
-        import tempfile
-
-        cache_path = tempfile.mkdtemp(prefix="xpugraph_")
-        logger.debug(f"Use {cache_path} as default local cache")
+    cache_path = get_cache_dir()
     return XpuGraphLocalCache(cache_path)
