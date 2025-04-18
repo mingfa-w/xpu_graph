@@ -199,13 +199,11 @@ def check_view(node):
 
 
 def check_softmax_op(node: fx.Node) -> bool:
-    try:
-        if check_op(node, torch.ops.aten._safe_softmax.default):
-            return True
-    except:
-        if check_op(node, torch.ops.aten._softmax.default):
-            return True
-    return False
+    if (not check_op(node, torch.ops.aten._safe_softmax.default)) and (
+        not check_op(node, torch.ops.aten._softmax.default)
+    ):
+        return False
+    return True
 
 
 def check_cat_op(node: fx.Node):
