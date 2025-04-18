@@ -1,9 +1,8 @@
 import torch
-import torch_npu
-import inductor_npu
 import xpu_graph
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import is_similar
+import torch_npu
 
 N0, N1, N2, N3, N4 = 10, 15, 255, 4, 128
 def torch_func(unsqueeze_2, clamp_min, unsqueeze_3, clamp_min_1):

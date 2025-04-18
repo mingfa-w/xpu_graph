@@ -8,7 +8,13 @@ from .fx_utils import FxStage
 import torch
 from torch._dynamo.convert_frame import compile_lock
 from torch.utils._python_dispatch import _disable_current_modes
-from torch._inductor.codecache import CompiledFxGraph, PyCodeCache, get_path
+
+torch_version = torch.__version__
+if torch_version.startswith("2.6"):
+    from torch._inductor.compile_fx import CompiledFxGraph
+    from torch._inductor.codecache import PyCodeCache, get_path
+else:
+    from torch._inductor.codecache import CompiledFxGraph, PyCodeCache, get_path
 from torch.fx import GraphModule, Graph, Node
 from torch.fx.node import map_aggregate
 import copy

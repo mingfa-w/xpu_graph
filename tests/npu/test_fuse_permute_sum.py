@@ -1,11 +1,8 @@
 import torch
-import torch_npu
-import inductor_npu
 import xpu_graph
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import is_similar
-
-
+import torch_npu
 
 def fn0(view_7, gather, gather_1, arg107_1, full_default):
     slice_3: "i64[11, 256]" = torch.ops.aten.slice.Tensor(arg107_1, 1, 0, 512)
