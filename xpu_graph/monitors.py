@@ -8,6 +8,7 @@ from xpu_graph.config import get_dump_dir
 
 CASE_CNT = itertools.count()
 
+
 class AutogradMonitor:
     def __init__(self, golden_mod, mark=None):
         self.golden_mod = golden_mod
@@ -56,7 +57,9 @@ class AutogradMonitor:
         except AssertionError as e:
             global CASE_CNT
             case_id = next(CASE_CNT)
-            dump_path = os.path.join(get_dump_dir(), f"case_{self.mark}_forward_{case_id}")
+            dump_path = os.path.join(
+                get_dump_dir(), f"case_{self.mark}_forward_{case_id}"
+            )
             logger.warning(
                 f"The forward pass diverges for {self.golden_mod}\ncases saved_to: {dump_path}\nError: {e}"
             )
@@ -117,7 +120,9 @@ class AutogradMonitor:
         except AssertionError as e:
             global CASE_CNT
             case_id = next(CASE_CNT)
-            dump_path = os.path.join(get_dump_dir(), f"case_{self.mark}_backward_{case_id}")
+            dump_path = os.path.join(
+                get_dump_dir(), f"case_{self.mark}_backward_{case_id}"
+            )
             logger.warning(
                 f"The backward pass diverges for {self.golden_mod}\ncases saved_to: {dump_path}\nError: {e}"
             )
@@ -144,6 +149,7 @@ class AutogradMonitor:
         # mod.register_full_backward_pre_hook(self._pre_backward_hook)
         mod.register_full_backward_hook(self._post_backward_hook)
 
+
 class FunctionMonitor(nn.Module):
     def __init__(self, golden_fn, target_fn, mark=None):
         super(FunctionMonitor, self).__init__()
@@ -156,14 +162,12 @@ class FunctionMonitor(nn.Module):
     def forward(self, *args):
         assert not torch.is_grad_enabled(), "FunctionMonitor only works in no_grad mode"
         logger.info(f"Guarding function: {self.golden_fn}")
-        inputs = copy.deepcopy([
-                (
-                    input.detach()
-                    if isinstance(input, torch.Tensor)
-                    else input
-                )
+        inputs = copy.deepcopy(
+            [
+                (input.detach() if isinstance(input, torch.Tensor) else input)
                 for input in args
-            ])
+            ]
+        )
         golden_inputs = copy.deepcopy(inputs)
         golden_outputs = self.golden_fn(*golden_inputs)
         target_outputs = self.target_fn(*args)
@@ -195,4 +199,51 @@ class FunctionMonitor(nn.Module):
                 os.path.join(dump_path, "inputs_golden.pth"),
             )
         return target_outputs
-    
+
+
+from torch.utils._python_dispatch import TorchDispatchMode
+
+
+class OpMonitor(TorchDispatchMode):
+    def __init__(self, golden_funcs, mark=None, dispatch_key=None):
+        super().__init__(dispatch_key)
+        self.golden_funcs = golden_funcs
+        self.mark = mark if mark is not None else "op"
+
+    def __torch_dispatch__(self, func, types, args, kwargs=None):
+        if func in self.golden_funcs:
+            golden_fn = self.golden_funcs[func]
+            logger.info(f"Guarding op: {func}")
+            inputs = copy.deepcopy(
+                [
+                    (input.detach() if isinstance(input, torch.Tensor) else input)
+                    for input in args
+                ]
+            )
+            golden_inputs = copy.deepcopy(inputs)
+            golden_outputs = golden_fn(*golden_inputs, **(kwargs or {}))
+            outputs = func(*args, **(kwargs or {}))
+            golden = {
+                "inputs": golden_inputs,
+                "outputs": golden_outputs,
+            }
+            target = {
+                "inputs": args,
+                "outputs": outputs,
+            }
+            try:
+                torch.testing.assert_close(golden, target)
+            except AssertionError as e:
+                global CASE_CNT
+                case_id = next(CASE_CNT)
+                dump_path = os.path.join(get_dump_dir(), f"case_{self.mark}_{case_id}")
+                logger.warning(
+                    f"The op diverges for {func}\ncases saved_to: {dump_path}\nError: {e}"
+                )
+                os.makedirs(dump_path, exist_ok=True)
+                torch.save(
+                    golden["inputs"],
+                    os.path.join(dump_path, "inputs_golden.pth"),
+                )
+            return outputs
+        return func(*args, **(kwargs or {}))
