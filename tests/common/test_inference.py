@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import xpu_graph
 from xpu_graph import OptLevel
-from xpu_graph.test_utils import is_similar
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 from tests.common.test_models import all_models
 
@@ -32,7 +32,10 @@ def compare_inference(ModCls, backend, bsz=8, input_dim=16):
 class TestInference:
     def setup_class(self):
         infer_config = xpu_graph.XpuGraphConfig(
-            is_training=False, opt_level=OptLevel.level2, freeze=False
+            is_training=False,
+            opt_level=OptLevel.level2,
+            freeze=False,
+            debuggers=["inference"],
         )
         self.infer_backend = xpu_graph.XpuGraph(infer_config)
 
@@ -40,14 +43,19 @@ class TestInference:
         "ReproCls",
         all_models,
     )
-    def test_inference(self, ReproCls):
-        compare_inference(ReproCls, self.infer_backend)
+    def test_inference(self, caplog, ReproCls):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.infer_backend):
+            compare_inference(ReproCls, self.infer_backend)
+            assert "Guarding" in caplog.text and "diverges" not in caplog.text
 
 
 class TestFreezeInference:
     def setup_class(self):
         freeze_config = xpu_graph.XpuGraphConfig(
-            is_training=False, opt_level=OptLevel.level2, freeze=True
+            is_training=False,
+            opt_level=OptLevel.level2,
+            freeze=True,
+            debuggers=["inference"],
         )
         # Warning: DO NOT use create both freeze and non-freeze in the same test case,
         self.freeze_backend = xpu_graph.XpuGraph(freeze_config)
@@ -56,21 +64,31 @@ class TestFreezeInference:
         "ReproCls",
         all_models,
     )
-    def test_freeze_inference(self, ReproCls):
-        compare_inference(ReproCls, self.freeze_backend)
+    def test_freeze_inference(self, caplog, ReproCls):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.freeze_backend):
+            compare_inference(ReproCls, self.freeze_backend)
+            assert "Guarding" in caplog.text and "diverges" not in caplog.text
 
 
 if __name__ == "__main__":
 
     config = xpu_graph.XpuGraphConfig(
-        is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True
+        is_training=False,
+        opt_level=OptLevel.level2,
+        freeze=True,
+        debug=True,
+        debuggers=["inference"],
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:
         compare_inference(ModCls, xpu_graph_backend)
 
     config = xpu_graph.XpuGraphConfig(
-        is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True
+        is_training=False,
+        opt_level=OptLevel.level2,
+        freeze=False,
+        debug=True,
+        debuggers=["inference"],
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:

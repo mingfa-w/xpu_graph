@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import xpu_graph
 from xpu_graph import OptLevel
-from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs, skip_xpu_graph_cache
 
 from tests.common.test_models import all_models
 
@@ -51,7 +51,7 @@ class TestTraining:
             is_training=True,
             opt_level=OptLevel.level2,
             freeze=False,
-            debuggers=["autograd"],
+            debuggers=["autograd", "function"],
         )
         self.train_backend = xpu_graph.XpuGraph(train_config)
 
@@ -60,7 +60,7 @@ class TestTraining:
         all_models,
     )
     def test_layernorm_patterns_with_loss_and_grad(self, caplog, ReproCls):
-        with need_xpu_graph_logs():
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.train_backend):
             compare_training(ReproCls, self.train_backend)
             assert "diverges" not in caplog.text
 
@@ -71,7 +71,7 @@ if __name__ == "__main__":
         opt_level=OptLevel.level2,
         freeze=False,
         debug=True,
-        debuggers=["autograd"],
+        debuggers=["autograd", "function"],
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
     for ModCls in all_models:

@@ -81,6 +81,19 @@ class XpuGraph:
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, fake_inputs, stage: FxStage):
+            debugger = (
+                self._config.debuggers
+                and stage is not FxStage.pregrad
+                and (
+                    stage.name in self._config.debuggers
+                    or "function" in self._config.debuggers
+                )
+            )
+            print("Debugger: ", debugger)
+            if debugger:
+                import copy
+
+                orig_gm = copy.copy(gm)
 
             nodes_statistics = NodesStatistics()
 
@@ -134,6 +147,11 @@ class XpuGraph:
 
                 if self._config.enable_cache:
                     xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+
+            if debugger:
+                from xpu_graph.monitors import FunctionMonitor
+
+                xpu_compiled = FunctionMonitor(orig_gm, xpu_compiled, mark=stage.name)
 
             return xpu_compiled
 
