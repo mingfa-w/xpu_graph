@@ -6,23 +6,28 @@ from xpu_graph.test_utils import need_xpu_graph_logs, skip_xpu_graph_cache
 
 def fn0(a):
     output = torch.sum(a, dim=1)
-    return output
+    return output + 100
+
 
 def fn1(a):
     output = torch.sum(a, dim=3, keepdim=True)
     return output
 
+
 def fn2(a):
     output = torch.sum(a, dim=1, keepdim=False)
     return output
+
 
 def fn3(a):
     output = torch.sum(a, dim=(1, 3), keepdim=False)
     return output
 
+
 def fn4(a):
     output = torch.sum(a, dim=(1, 3), keepdim=True)
     return output
+
 
 def reduce_test(xpu_graph, func):
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
@@ -58,7 +63,7 @@ if __name__ == "__main__":
     config = xpu_graph.config.XpuGraphConfig(is_training=False, debug=True)
     xpu_graph = xpu_graph.compiler.XpuGraph(config)
     reduce_test(xpu_graph, fn0)
-    reduce_test(xpu_graph, fn1)
-    reduce_test(xpu_graph, fn2)
-    reduce_test(xpu_graph, fn3)
-    reduce_test(xpu_graph, fn4)
+    # reduce_test(xpu_graph, fn1)
+    # reduce_test(xpu_graph, fn2)
+    # reduce_test(xpu_graph, fn3)
+    # reduce_test(xpu_graph, fn4)

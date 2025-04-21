@@ -1,7 +1,7 @@
 import pytest
 import torch
 import xpu_graph
-from xpu_graph.test_utils import is_similar
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
 
 def fn0(inputs):
@@ -11,15 +11,27 @@ def fn0(inputs):
     return output
 
 
-def cat_test(xpu_graph, func):
+def cat_cat_test(xpu_graph, func):
     a = torch.randn(128, 64)
     b = torch.randn(128, 32)
     c = torch.randn(128, 300)
     args = [a, b, c]
     compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
-    res1 = func(args)
+    expect = func(args)
     res = compiled(args)
-    assert is_similar(res1.float(), res.float())
+    assert is_similar(expect, res)
+
+
+def fn1(input):
+    return torch.cat([input], dim=1)
+
+
+def cat_test(xpu_graph, func):
+    input = torch.randn(10, 10)
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+    expect = func(input)
+    res = compiled(input)
+    assert is_similar(expect, res)
 
 
 class TestCat:
@@ -33,11 +45,25 @@ class TestCat:
             fn0,
         ],
     )
-    def test_sumcat_patterns(self, pattern_func):
-        cat_test(self.xpu_graph, pattern_func)
+    def test_foldcatcat_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs():
+            cat_cat_test(self.xpu_graph, pattern_func)
+            assert "Pattern.FoldCatCat changed graph" in caplog.text
+
+    @pytest.mark.parametrize(
+        "pattern_func",
+        [
+            fn1,
+        ],
+    )
+    def test_cat_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs():
+            cat_test(self.xpu_graph, pattern_func)
+            assert "Pattern.FoldCat changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     config = xpu_graph.config.XpuGraphConfig(is_training=False)
     xpu_graph = xpu_graph.compiler.XpuGraph(config)
-    cat_test(xpu_graph, fn0)
+    cat_cat_test(xpu_graph, fn0)
+    cat_test(xpu_graph, fn1)

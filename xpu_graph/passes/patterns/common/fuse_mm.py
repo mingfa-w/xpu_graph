@@ -16,6 +16,7 @@ from ..utils.check_ops import (
     check_view,
 )
 
+
 def _is_mm_view_add(
     node: fx.Node,
 ) -> tuple[bool, Optional[fx.Node]]:
@@ -40,10 +41,15 @@ def _is_mm_view_add(
         return False, ()
     if len(view_node.users) != 1:
         return False, ()
-    if isinstance(bias_node, float) or isinstance(bias_node, int) or len(bias_node.meta["tensor_meta"].shape) > 2:
+    if (
+        isinstance(bias_node, float)
+        or isinstance(bias_node, int)
+        or len(bias_node.meta["tensor_meta"].shape) > 2
+    ):
         return False, ()
 
     return True, (bias_node, input_node, weight_node, mm_node, view_node, view_param)
+
 
 def _is_mm_add(
     node: fx.Node,
@@ -67,9 +73,10 @@ def _is_mm_add(
 
     return True, (bias_node, input_node, weight_node)
 
+
 class FusedAddMM(Pattern):
     _opt_level = OptLevel.level2
-    _stages = [FxStage.inference, FxStage.forward, FxStage.pregrad]
+    _support_stages = [FxStage.inference, FxStage.forward, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False

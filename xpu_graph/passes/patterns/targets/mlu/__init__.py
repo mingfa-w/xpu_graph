@@ -24,10 +24,6 @@ def get_all_patterns(config: XpuGraphConfig):
                 and pat not in (Pattern, AutoMatchPattern)
                 and pat._opt_level <= config.opt_level
             ):
-                for stage in pat._stages:
-                    patterns[pat._pattern_group].append(pat(stage))
-
-    for group, group_patterns in patterns.items():
-        logger.debug(f"xpu_graph enable builtin mlu {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}")
+                patterns[pat._pattern_group].append(pat())
 
     return patterns

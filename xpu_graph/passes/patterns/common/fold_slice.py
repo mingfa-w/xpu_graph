@@ -7,7 +7,12 @@ MAX_INT64 = 9223372036854775807
 
 
 class FoldSlice(Pattern):
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
+    _support_stages = [
+        FxStage.inference,
+        FxStage.pregrad,
+        FxStage.forward,
+        FxStage.backward,
+    ]
 
     def process(self, gm: fx.GraphModule):
         changed = False

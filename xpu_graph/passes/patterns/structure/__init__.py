@@ -19,6 +19,7 @@ def get_all_patterns(config: XpuGraphConfig):
         structure_preplacements = []
         if config.target == Target.mlu:
             from ..targets.mlu.structure_replacements import get_structure_replacements
+
             structure_preplacements = get_structure_replacements()
 
         for name in dir(module):
@@ -30,10 +31,8 @@ def get_all_patterns(config: XpuGraphConfig):
                 and pat._opt_level <= config.opt_level
             ):
                 if pat.__name__ in structure_preplacements:
-                    for stage in pat._stages:
-                        patterns[pat._pattern_group].append(pat(structure_preplacements[pat.__name__], stage))
-
-    for group, group_patterns in patterns.items():
-        logger.debug(f"xpu_graph enable builtin structure {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}")
+                    patterns[pat._pattern_group].append(
+                        pat(structure_preplacements[pat.__name__])
+                    )
 
     return patterns

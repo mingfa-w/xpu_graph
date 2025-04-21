@@ -26,14 +26,17 @@ class PatternGroup(Enum):
 class Pattern(Optimizer):
     _opt_level = OptLevel.level1
     _pattern_group = PatternGroup.GROUP0
-    _stages = [FxStage.inference]
+    _support_stages = [FxStage.inference]
 
-    def __init__(self, stage: FxStage):
+    def __init__(self):
         super().__init__()
-        self._stage = stage
+        self._current_stage = FxStage.inference
 
     def process(self, gm: fx.GraphModule):
         raise NotImplementedError
+
+    def set_current_stage(self, stage: FxStage):
+        self._current_stage = stage
 
 
 class PatternRule(object):
@@ -65,9 +68,7 @@ class AutoMatchPattern(Pattern):
     )
     _mermaid_re2 = re.compile(r"^\s*(\w+)([\[\(\{][\w\./]+[\]\)\}]){0,1}\s*$")
 
-    def __init__(self, stage: FxStage):
-        super().__init__(stage)
-
+    def __init__(self):
         self._rule_map = {}
 
         try:
