@@ -18,9 +18,9 @@ class RemoveLayerNormCastPregrad(AutoMatchPattern):
             inp = pre_cast.args[0]
             if inp.meta['tensor_meta'].dtype not in (torch.bfloat16, torch.float16,):
                 return False
-            if pre_cast.args[1] != torch.float32:
+            if pre_cast.kwargs['dtype'] != torch.float:
                 return False
-            if post_cast.args[1] != inp.meta['tensor_meta'].dtype:
+            if post_cast.kwargs['dtype'] != inp.meta['tensor_meta'].dtype:
                 return False
             return True
 

@@ -6,27 +6,10 @@ import xpu_graph
 from xpu_graph import OptLevel
 from xpu_graph.test_utils import is_similar
 
+from tests.common.test_models import all_models
+
 device = "cpu"
 data_type = torch.float32
-
-
-class SimpleModel(nn.Module):
-    def __init__(self, input_dim):
-        super(SimpleModel, self).__init__()
-        self.fc = nn.Linear(input_dim, 1)
-
-    def forward(self, x):
-        return self.fc(x)
-
-
-class SliceCatModel(nn.Module):
-    def __init__(self, input_dim):
-        super(SliceCatModel, self).__init__()
-        self.fc = nn.Linear(input_dim, 16)
-
-    def forward(self, x):
-        x = self.fc(x)
-        return torch.cat([-x[..., 8:], x[..., :8]], 1).sum(dim=-1)
 
 
 def compare_training(ModCls, backend, nsteps=4, bsz=8, input_dim=16):
@@ -71,7 +54,7 @@ class TestTraining:
 
     @pytest.mark.parametrize(
         "ReproCls",
-        [SimpleModel, SliceCatModel],
+        all_models,
     )
     def test_layernorm_patterns_with_loss_and_grad(self, ReproCls):
         compare_training(ReproCls, self.train_backend)
@@ -79,8 +62,8 @@ class TestTraining:
 
 if __name__ == "__main__":
     config = xpu_graph.XpuGraphConfig(
-        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=False
+        is_training=True, opt_level=OptLevel.level2, freeze=False, debug=True
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
-    compare_training(SimpleModel, xpu_graph_backend)
-    compare_training(SliceCatModel, xpu_graph_backend)
+    for ModCls in all_models:
+        compare_training(ModCls, xpu_graph_backend)

@@ -6,17 +6,10 @@ import xpu_graph
 from xpu_graph import OptLevel
 from xpu_graph.test_utils import is_similar
 
+from tests.common.test_models import all_models
+
 device = "cpu"
 data_type = torch.float32
-
-
-class SimpleModel(nn.Module):
-    def __init__(self, input_dim):
-        super(SimpleModel, self).__init__()
-        self.fc = nn.Linear(input_dim, 1)
-
-    def forward(self, x):
-        return self.fc(x)
 
 
 def compare_inference(ModCls, backend, bsz=8, input_dim=16):
@@ -45,7 +38,7 @@ class TestInference:
 
     @pytest.mark.parametrize(
         "ReproCls",
-        [SimpleModel],
+        all_models,
     )
     def test_inference(self, ReproCls):
         compare_inference(ReproCls, self.infer_backend)
@@ -61,7 +54,7 @@ class TestFreezeInference:
 
     @pytest.mark.parametrize(
         "ReproCls",
-        [SimpleModel],
+        all_models,
     )
     def test_freeze_inference(self, ReproCls):
         compare_inference(ReproCls, self.freeze_backend)
@@ -73,10 +66,12 @@ if __name__ == "__main__":
         is_training=False, opt_level=OptLevel.level2, freeze=True, debug=True
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
-    compare_inference(SimpleModel, xpu_graph_backend)
+    for ModCls in all_models:
+        compare_inference(ModCls, xpu_graph_backend)
 
     config = xpu_graph.XpuGraphConfig(
         is_training=False, opt_level=OptLevel.level2, freeze=False, debug=True
     )
     xpu_graph_backend = xpu_graph.XpuGraph(config)
-    compare_inference(SimpleModel, xpu_graph_backend)
+    for ModCls in all_models:
+        compare_inference(ModCls, xpu_graph_backend)
