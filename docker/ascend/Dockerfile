@@ -1,5 +1,3 @@
-#syntax=docker/dockerfile:1.4
-
 # WARNING(liuyuan): set DOCKER_BUILDKIT=1 before you try to build this Dockerfile
 #                   e.g.: DOCKER_BUILDKIT=1 docker build -t test .
 #                   use --progress=plain to check each step.
@@ -46,64 +44,23 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 ######## Environments End ##########
 
-
-# RUN <<EOT bash 
-#   set -ex
-#   apt-get update -yq --no-install-recommends
-#   apt-get install -yq --no-install-recommends apt-utils adduser sudo vim tmux openssh-server net-tools iputils-ping
-#   apt-get install -yq --no-install-recommends python${PYTHON_VERSION}  python3-dbg python3-pip libmpich-dev \
-#       git python3-pip python3-distutils python3-wheel python3-yaml python3-setuptools \
-#       libssl-dev ninja-build libzstd-dev python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv \
-#       wget gdb tree bash-completion curl sshpass locales \
-#       build-essential apt-utils jq \
-#   apt-get clean && apt-get purge && rm -rf /var/lib/apt/lists
-#   ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3
-#   ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python
-#   locale-gen en_US.UTF-8
-#   mkdir -p /var/run/sshd
-# EOT
-
-RUN <<EOT bash
-    set -ex
-    mkdir -p ${ASCEND_BASE}/driver
-    wget -q --no-cache ${KERNELS_URL}
-    wget -q --no-cache ${TOOLKIT_URL}
-    chmod u+x ${TOOLKIT_PKG} ${KERNELS_PKG}
-    yes | ./${KERNELS_PKG} --quiet --install --install-path=${ASCEND_BASE}
-    yes | ./${TOOLKIT_PKG} --quiet --install --install-path=${ASCEND_BASE}
+RUN mkdir -p ${ASCEND_BASE}/driver && wget -q --no-cache ${KERNELS_URL} && \
+    wget -q --no-cache ${TOOLKIT_URL} && \
+    chmod u+x ${TOOLKIT_PKG} ${KERNELS_PKG} && \
+    yes | ./${KERNELS_PKG} --quiet --install --install-path=${ASCEND_BASE} && \
+    yes | ./${TOOLKIT_PKG} --quiet --install --install-path=${ASCEND_BASE} && \
     rm -rf ${TOOLKIT_PKG} ${KERNELS_PKG}
-EOT
 
-RUN <<EOT bash
-  echo "source $ASCEND_BASE/ascend-toolkit/set_env.sh" >> ~/.bashrc
-  echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:$ASCEND_BASE/driver/lib64/driver:$ASCEND_BASE/driver/lib64/common" >> ~/.bashrc
-  echo "alias ll='ls -l'" >> ~/.bashrc
-EOT
+RUN echo "source $ASCEND_BASE/ascend-toolkit/set_env.sh" >> ~/.bashrc && \
+    echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:$ASCEND_BASE/driver/lib64/driver:$ASCEND_BASE/driver/lib64/common" >> ~/.bashrc && \
+    echo "alias ll='ls -l'" >> ~/.bashrc
 
-RUN <<EOT bash 
-  set -ex
-  pip3 config --global set global.break-system-packages true && pip3 install --no-cache-dir pip --upgrade
-  pip3 install --no-cache-dir -U pip==24.0 setuptools==65.7.0 requests wheel --upgrade
-  pip3 install torch==${TORCH_VERSION} --index-url https://download.pytorch.org/whl/cpu
-  pip3 install wheel setuptools ninja wheel pybind11 attrs==24.2.0 \
+RUN pip3 config --global set global.break-system-packages true && pip3 install --no-cache-dir pip --upgrade && \
+    pip3 install --no-cache-dir -U pip==24.0 setuptools==65.7.0 requests wheel --upgrade && \
+    pip3 install torch==${TORCH_VERSION} --index-url https://download.pytorch.org/whl/cpu && \
+    pip3 install wheel setuptools ninja wheel pybind11 attrs==24.2.0 \
                numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6.0.0 \
                pytest==8.3.2 pytest-xdist==3.6.1 lit pandas matplotlib \
-               pyyaml einops torchgen cloudpickle ml-dtypes tornado
-  pip3 install https://tosv.byted.org/obj/seed-hhw/home/liuyuan/torch_npu-2.3.1.post5%2Bgitff6e003-cp39-cp39-linux_x86_64.whl
-  pip3 install https://tosv.byted.org/obj/seed-hhw/home/liuyuan/torchair-0.1-py3-none-any.whl
-EOT
-
-# RUN <<EOT bash
-#   set -ex
-#   git clone https://github.com/Ascend/pytorch.git
-#   pushd pytorch
-#     # pip3 install -r requirements.txt
-#     pushd ci
-#       bash build.sh --python=${PYTHON_VERSION}
-#     popd
-#     pip install dist/*whl
-#     pushd third_party/torchair
-#       bash install.sh
-#     popd
-#   popd
-# EOT
+               pyyaml einops torchgen cloudpickle ml-dtypes tornado && \
+    pip3 install https://tosv.byted.org/obj/seed-hhw/home/liuyuan/torch_npu-2.3.1.post5%2Bgitff6e003-cp39-cp39-linux_x86_64.whl && \
+    pip3 install https://tosv.byted.org/obj/seed-hhw/home/liuyuan/torchair-0.1-py3-none-any.whl
