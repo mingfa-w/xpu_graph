@@ -72,7 +72,7 @@ class XpuGraph:
 
         if self._config.target == Target.ascend:
             self._config.enable_cache = False
-            logger.warn("Target Ascend does not support cache.")
+            logger.warning("Target Ascend does not support cache.")
 
         self._pass_manager = PassManager(self._config)
         self._cache = (
