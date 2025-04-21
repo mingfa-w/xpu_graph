@@ -3,7 +3,7 @@
 # WARNING(liuyuan): set DOCKER_BUILDKIT=1 before you try to build this Dockerfile
 #                   e.g.: DOCKER_BUILDKIT=1 docker build -t test .
 #                   use --progress=plain to check each step.
-ARG BASE_IMAGE=hub.byted.org/tritonx/runtime-ascend8.0.0.alpha003-debian10-x86_64-for-engine:0.0.0
+ARG BASE_IMAGE=hub.byted.org/tritonx/runtime-deberta-8.0.0.alpha003-debain10-x86_64:1.0.0.1
 # WARNING(liuyuan): ARG variable is no more visible (or become emtpy) after FROM !!!!
 FROM ${BASE_IMAGE}
 
