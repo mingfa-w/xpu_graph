@@ -19,7 +19,6 @@ jobs:
     container:
       image: hub.byted.org/aicompiler/npu.ci.debian12:devel_cann8.0.rc3.alpha003_py311_th26
       volumes:
-        - /data04/mingfa:/host
         - /etc/localtime:/etc/localtime
         - /usr/local/Ascend/driver:/usr/local/Ascend/driver
         - /usr/local/dcmi:/usr/local/dcmi
