@@ -7,15 +7,22 @@ from ..utils.check_ops import (
     check_squeeze_op,
 )
 
+
 def match(a, b):
     return a == b if isinstance(b, int) else (len(b) == 1 and a in b)
+
 
 class FoldSqueeze0(Pattern):
     """
     Fold aten.squeeze(aten.squeeze)
     """
 
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
+    _support_stages = [
+        FxStage.inference,
+        FxStage.pregrad,
+        FxStage.forward,
+        FxStage.backward,
+    ]
 
     def process(self, gm: fx.GraphModule):
         changed = False
@@ -39,12 +46,18 @@ class FoldSqueeze0(Pattern):
         gm.recompile()
         return changed
 
+
 class FoldSqueeze1(Pattern):
     """
     Fold aten.squeeze(aten.unsqueeze)
     """
 
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
+    _support_stages = [
+        FxStage.inference,
+        FxStage.pregrad,
+        FxStage.forward,
+        FxStage.backward,
+    ]
 
     def process(self, gm: fx.GraphModule):
         changed = False

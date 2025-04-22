@@ -6,6 +6,7 @@ from torch.utils._pytree import tree_flatten
 from torch.multiprocessing.reductions import StorageWeakRef
 
 from xpu_graph.passes.optimizer import Optimizer
+from xpu_graph.fx_utils import has_storage, FxStage
 
 aten = torch.ops.aten
 
@@ -53,7 +54,8 @@ def fx_graph_cse(fx_g: torch.fx.graph.Graph):
     # Compatible with version torch==2.3.1
     try:
         from torch._inductor.pattern_matcher import same_mutation_regions
-    except ImportError: 
+    except ImportError:
+
         def same_mutation_regions(a, b) -> bool:
             assert "mutation_region_id" in a.meta
             assert "mutation_region_id" in b.meta
@@ -67,28 +69,16 @@ def fx_graph_cse(fx_g: torch.fx.graph.Graph):
     output_node: fx.Node = list(fx_g.nodes)[-1]
     assert output_node.op == "output"
 
-    def checkable_node(node: fx.Node) -> bool:
-        """We can evaluate only nodes that represent tensors with defined storage."""
-        if "val" not in node.meta or not isinstance(node.meta["val"], torch.Tensor):
-            return False
-
-        try:
-            node.meta["val"].untyped_storage()
-        except NotImplementedError:
-            return False
-
-        return True
-
     output_storages = {
         StorageWeakRef(n.meta["val"].untyped_storage())
         for n in output_node.all_input_nodes
-        if checkable_node(n)
+        if has_storage(n)
     }
 
     output_storages_producers = set()
     for n in fx_g.nodes:
         if (
-            checkable_node(n)
+            has_storage(n)
             and StorageWeakRef(n.meta["val"].untyped_storage()) in output_storages
         ):
             output_storages_producers.add(n)
@@ -170,6 +160,12 @@ def fx_graph_cse(fx_g: torch.fx.graph.Graph):
 
 
 class Cse(Optimizer):
+    _support_stages = [
+        FxStage.inference,
+        FxStage.forward,
+        FxStage.backward,
+    ]
+
     def process(self, gm: fx.GraphModule):
         cse_graph = fx_graph_cse(gm.graph)
 

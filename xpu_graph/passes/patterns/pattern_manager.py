@@ -7,6 +7,7 @@ from xpu_graph.passes.optimizer import Optimizer
 from xpu_graph.config import XpuGraphConfig, Target
 from xpu_graph.fx_utils import FxStage
 from .pattern import Pattern, PatternGroup
+from xpu_graph.utils import logger
 
 
 class PatternManager(Optimizer):
@@ -14,6 +15,12 @@ class PatternManager(Optimizer):
         super().__init__()
 
         self._patterns = {
+            PatternGroup.GROUP0: [],
+            PatternGroup.GROUP1: [],
+            PatternGroup.GROUP2: [],
+        }
+
+        self._enable_patterns = {
             PatternGroup.GROUP0: [],
             PatternGroup.GROUP1: [],
             PatternGroup.GROUP2: [],
@@ -40,21 +47,34 @@ class PatternManager(Optimizer):
         for group, patterns in get_target_patterns(config).items():
             self._patterns[group] += patterns
 
-        self._stage = FxStage.inference
+    def reset_patterns_with_stage(self, stage):
+        self._enable_patterns = {
+            PatternGroup.GROUP0: [],
+            PatternGroup.GROUP1: [],
+            PatternGroup.GROUP2: [],
+        }
+        for group in self._patterns.keys():
+            for pattern in self._patterns[group]:
+                if stage in pattern._support_stages:
+                    pattern.set_current_stage(stage)
+                    self._enable_patterns[group].append(pattern)
 
-    def set_stage(self, stage: FxStage):
-        prev_stage = self._stage
-        self._stage = stage
-        return prev_stage
+        for group, group_patterns in self._enable_patterns.items():
+            logger.debug(
+                f"xpu_graph enable builtin {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}"
+            )
+
+    def get_pass_with_stage(self, stage):
+        self.reset_patterns_with_stage(stage)
+        return self
 
     def process(self, gm: fx.GraphModule) -> bool:
         changed = False
         loop_time = 5
         for group in sorted(self._patterns.keys()):
             for i in range(loop_time):
-                for pattern in self._patterns[group]:
-                    if self._stage == pattern._stage:
-                        changed = changed or pattern(gm)
+                for pattern in self._enable_patterns[group]:
+                    changed = changed or pattern(gm)
 
         return changed
 
@@ -72,13 +92,12 @@ class PatternManager(Optimizer):
     def register_pattern(self, *args):
         if len(args) == 1:
             pat = args[0]
-            for stage in pat._stages:
-                self._patterns[pat._pattern_group].append(pat(stage))
+            self._patterns[pat._pattern_group].append(pat)
         elif len(args) == 2 or len(args) == 3:
 
             class _Pattern(Pattern):
-                def __init__(self, stage):
-                    super().__init__(stage)
+                def __init__(self):
+                    super().__init__()
 
                 def __call__(self, gm: fx.GraphModule) -> bool:
                     from torch.fx import subgraph_rewriter
@@ -88,6 +107,5 @@ class PatternManager(Optimizer):
                     return len(match)
 
             if len(args) == 3:
-                _Pattern._stages = [args[2]]
-            for stage in _Pattern._stages:
-                self._patterns[_Pattern._pattern_group].append(_Pattern(stage))
+                _Pattern._support_stages = [args[2]]
+            self._patterns[_Pattern._pattern_group].append(_Pattern())

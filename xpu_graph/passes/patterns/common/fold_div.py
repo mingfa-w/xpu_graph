@@ -8,7 +8,13 @@ class FoldDiv1(Pattern):
     """
     Fold aten.div(x, one_like) -> x
     """
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
+
+    _support_stages = [
+        FxStage.inference,
+        FxStage.pregrad,
+        FxStage.forward,
+        FxStage.backward,
+    ]
 
     def process(self, gm: fx.GraphModule):
         changed = False
@@ -41,21 +47,21 @@ class FoldDiv1(Pattern):
         for div in candidates:
             inp0 = div.args[0]
             inp1 = div.args[1]
-            res = None
+            target_val = None
             is_match = False
             if _is_one_like(inp1):
                 is_match = True
-                res = inp0
+                target_val = inp0
 
             if is_match:
                 changed = True
                 with gm.graph.inserting_before(div):
-                    from xpu_graph.passes.patterns.utils.expand_tensor import (
-                        expand_tensor,
+                    from xpu_graph.passes.patterns.utils.get_binary_fold_result import (
+                        get_binary_fold_result,
                     )
 
-                    expand = expand_tensor(gm, res, div)
-                div.replace_all_uses_with(expand)
+                    fold_res = get_binary_fold_result(gm, target_val, div.meta)
+                div.replace_all_uses_with(fold_res)
                 gm.graph.erase_node(div)
 
         gm.graph.lint()

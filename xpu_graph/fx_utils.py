@@ -6,6 +6,7 @@ from contextlib import nullcontext
 
 import torch
 import torch.utils._pytree as pytree
+import torch.fx as fx
 from torch.export.unflatten import _assign_attr, _AttrKind
 from torch.fx import map_arg
 from torch.fx.experimental.proxy_tensor import make_fx, wrapper_and_args_for_make_fx
@@ -224,14 +225,10 @@ def _invoke_dispatcher(
     # that we generate in torch.compile.
     with torch.autograd.set_multithreading_enabled(
         False
-    ), preserve_rng_state(), (
-        fake_mode
-    ), (
-        python_dispatcher_mode
-    ), PhiloxStateTracker():
+    ), preserve_rng_state(), fake_mode, python_dispatcher_mode, PhiloxStateTracker():
         with enable_python_dispatcher():
             with patch("torch.cuda.set_rng_state", lambda *args: None):
-                if hasattr(aot_config, 'static_input_indices'):
+                if hasattr(aot_config, "static_input_indices"):
                     fw_metadata = run_functionalized_fw_and_collect_metadata(
                         flat_fn,
                         static_input_indices=aot_config.static_input_indices,
@@ -362,3 +359,16 @@ def decompose_for_inductor(gm, fake_inputs):
         record_module_stack=True,
     )(*fake_inputs)
     return gm
+
+
+def has_storage(node: fx.Node) -> bool:
+    """We can evaluate only nodes that represent tensors with defined storage."""
+    if "val" not in node.meta or not isinstance(node.meta["val"], torch.Tensor):
+        return False
+
+    try:
+        node.meta["val"].untyped_storage()
+    except NotImplementedError:
+        return False
+
+    return True

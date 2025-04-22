@@ -6,7 +6,21 @@ from xpu_graph.passes.patterns.utils.check_ops import check_cat_op
 
 
 class FoldCat(Pattern):
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
+    _support_stages = [
+        FxStage.inference,
+        FxStage.pregrad,
+        FxStage.forward,
+        FxStage.backward,
+    ]
+
+    def _get_fold_result(self, gm: fx.GraphModule, src: fx.Node):
+        return gm.graph.call_function(
+            torch.ops.aten._to_copy.default,
+            args=(src,),
+            kwargs={
+                "memory_format": torch.contiguous_format,
+            },
+        )
 
     def process(self, gm: fx.GraphModule):
         changed = False
@@ -21,8 +35,9 @@ class FoldCat(Pattern):
             if len(inps) == 1:
                 changed = True
 
-                inp = inps[0]
-                cat.replace_all_uses_with(inp)
+                with gm.graph.inserting_before(cat):
+                    fold_res = self._get_fold_result(gm, inps[0])
+                cat.replace_all_uses_with(fold_res)
                 gm.graph.erase_node(cat)
 
         gm.graph.lint()
@@ -31,7 +46,12 @@ class FoldCat(Pattern):
 
 
 class FoldCatCat(Pattern):
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
+    _support_stages = [
+        FxStage.inference,
+        FxStage.pregrad,
+        FxStage.forward,
+        FxStage.backward,
+    ]
 
     def process(self, gm: fx.GraphModule):
         changed = False
@@ -44,20 +64,20 @@ class FoldCatCat(Pattern):
             if cat_axis == len(node.meta["tensor_meta"].shape) - 1:
                 cat_axis = -1
             cat_input = []
-            changed1 = False
-            for m in node.args[0]:
-                is_cat1, cat_axis1 = check_cat_op(m)
-                if is_cat1:
-                    if cat_axis1 == len(m.meta["tensor_meta"].shape) - 1:
-                        cat_axis1 = -1
-                    if (len(m.users) == 1) and (cat_axis == cat_axis1):
-                        cat_input += m.args[0]
-                        changed1 = True
+            foldable = False
+            for inp in node.args[0]:
+                is_input_cat, input_cat_axis = check_cat_op(inp)
+                if is_input_cat:
+                    if input_cat_axis == len(inp.meta["tensor_meta"].shape) - 1:
+                        input_cat_axis = -1
+                    if len(inp.users) == 1 and cat_axis == input_cat_axis:
+                        cat_input += inp.args[0]
+                        foldable = True
                     else:
-                        cat_input.append(m)
+                        cat_input.append(inp)
                 else:
-                    cat_input.append(m)
-            if changed1:
+                    cat_input.append(inp)
+            if foldable:
                 with gm.graph.inserting_before(node):
                     concat_node = gm.graph.create_node(
                         op="call_function",
