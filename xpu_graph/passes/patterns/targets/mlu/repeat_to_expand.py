@@ -20,9 +20,11 @@ NodeType = fx.Node
     %repeat : [num_users=1] = call_function[target=torch.ops.aten.repeat.default](args = (%unsqueeze, [1, 1, 256]), kwargs = {})
     %gather : [num_users=1] = call_function[target=torch.ops.aten.gather.default](args = (%arg0_1, 1, %repeat), kwargs = {})
 """
+
+
 class FusedGatherToCopy(Pattern):
     _opt_level = OptLevel.level1
-    _stages = [FxStage.inference, FxStage.pregrad]
+    _support_stages = [FxStage.inference, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False

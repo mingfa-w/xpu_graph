@@ -9,7 +9,12 @@ class FoldView0(Pattern):
     Fold aten.view which inp.shape == target_shape
     """
 
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
+    _support_stages = [
+        FxStage.inference,
+        FxStage.pregrad,
+        FxStage.forward,
+        FxStage.backward,
+    ]
 
     def process(self, gm: fx.GraphModule):
         changed = False
@@ -52,7 +57,7 @@ class FoldView1(Pattern):
     Fold aten.view(aten.view) -> aten.view
     """
 
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward]
+    _support_stages = [FxStage.inference, FxStage.pregrad, FxStage.forward]
 
     def process(self, gm: fx.GraphModule):
         changed = False

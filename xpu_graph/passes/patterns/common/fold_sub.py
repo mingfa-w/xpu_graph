@@ -8,7 +8,13 @@ class FoldSub0(Pattern):
     """
     Fold aten.sub(x, zero_like) -> x
     """
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
+
+    _support_stages = [
+        FxStage.inference,
+        FxStage.pregrad,
+        FxStage.forward,
+        FxStage.backward,
+    ]
 
     def process(self, gm: fx.GraphModule):
         changed = False
@@ -41,21 +47,21 @@ class FoldSub0(Pattern):
         for sub in candidates:
             inp0 = sub.args[0]
             inp1 = sub.args[1]
-            res = None
+            target_val = None
             is_match = False
             if _is_zero_like(inp1):
                 is_match = True
-                res = inp0
+                target_val = inp0
 
             if is_match:
                 changed = True
                 with gm.graph.inserting_before(sub):
-                    from xpu_graph.passes.patterns.utils.expand_tensor import (
-                        expand_tensor,
+                    from xpu_graph.passes.patterns.utils.get_binary_fold_result import (
+                        get_binary_fold_result,
                     )
 
-                    expand = expand_tensor(gm, res, sub)
-                sub.replace_all_uses_with(expand)
+                    fold_res = get_binary_fold_result(gm, target_val, sub.meta)
+                sub.replace_all_uses_with(fold_res)
                 gm.graph.erase_node(sub)
 
         gm.graph.lint()
