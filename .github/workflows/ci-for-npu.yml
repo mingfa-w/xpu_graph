@@ -3,6 +3,11 @@ on:
   pull_request:
     branches:
       - master
+    paths_ignore:
+      - 'xpu_graph/backend/mlu.py'
+      - 'xpu_graph/passes/patterns/targets/mlu/'
+      - 'tests/mlu'
+      - 'docker/*'
     types: [opened, synchronize, reopened]
   push:
     branches:
@@ -17,7 +22,7 @@ jobs:
     name: Run npu tests
     runs-on: NPU
     container:
-      image: hub.byted.org/aicompiler/search.pytorch260.npu.ci:py3112.th260.cann8.0.rc3.alpha003
+      image: hub.byted.org/arnold/ascend_for_leo:97e006f7db4ac6506b4e61f87b12f8fa
       volumes:
         - /etc/localtime:/etc/localtime
         - /usr/local/Ascend/driver:/usr/local/Ascend/driver
