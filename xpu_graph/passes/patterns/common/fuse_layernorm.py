@@ -169,7 +169,7 @@ def layernorm_replacement(input, weight, bias, epsilon):
 
 class FusedLayerNorm(Pattern):
     _opt_level = OptLevel.level2
-    _stages = [FxStage.inference, FxStage.pregrad]
+    _support_stages = [FxStage.inference, FxStage.pregrad]
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
@@ -185,10 +185,10 @@ class FusedLayerNorm(Pattern):
                 eps = 1e-6
 
             with graph_module.graph.inserting_before(node):
-                predispatch = self._stage == FxStage.pregrad
-                layer_norm_node = trace_and_inline(predispatch, graph_module, layernorm_replacement)(
-                    input, weight, bias, eps
-                )
+                predispatch = self._current_stage == FxStage.pregrad
+                layer_norm_node = trace_and_inline(
+                    predispatch, graph_module, layernorm_replacement
+                )(input, weight, bias, eps)
 
             node.replace_all_uses_with(layer_norm_node)
             changed = True

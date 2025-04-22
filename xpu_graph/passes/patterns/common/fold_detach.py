@@ -1,9 +1,11 @@
 import torch
 import torch.fx as fx
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.fx_utils import FxStage
 
 
 class FoldDetach(Pattern):
+    _support_stages = [FxStage.inference]
 
     def process(self, gm: fx.GraphModule):
         changed = False

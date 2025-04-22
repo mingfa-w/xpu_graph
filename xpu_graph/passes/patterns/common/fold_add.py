@@ -9,7 +9,13 @@ class FoldAdd0(Pattern):
     """
     Fold aten.add(x, zero_like) -> x
     """
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
+
+    _support_stages = [
+        FxStage.inference,
+        FxStage.pregrad,
+        FxStage.forward,
+        FxStage.backward,
+    ]
 
     def process(self, gm: fx.GraphModule):
         changed = False
@@ -45,24 +51,24 @@ class FoldAdd0(Pattern):
         for add in candidates:
             inp0 = add.args[0]
             inp1 = add.args[1]
-            res = None
+            target_val = None
             is_match = False
             if _is_zero_like(inp0):
                 is_match = True
-                res = inp1
+                target_val = inp1
             elif _is_zero_like(inp1):
                 is_match = True
-                res = inp0
+                target_val = inp0
 
             if is_match:
                 changed = True
                 with gm.graph.inserting_before(add):
-                    from xpu_graph.passes.patterns.utils.expand_tensor import (
-                        expand_tensor,
+                    from xpu_graph.passes.patterns.utils.get_binary_fold_result import (
+                        get_binary_fold_result,
                     )
 
-                    expand = expand_tensor(gm, res, add)
-                add.replace_all_uses_with(expand)
+                    fold_res = get_binary_fold_result(gm, target_val, add.meta)
+                add.replace_all_uses_with(fold_res)
                 gm.graph.erase_node(add)
 
         gm.graph.lint()

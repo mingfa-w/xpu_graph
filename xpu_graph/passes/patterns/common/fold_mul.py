@@ -8,7 +8,13 @@ class FoldMul1(Pattern):
     """
     Fold aten.mul(x, one_like) -> x
     """
-    _stages = [FxStage.inference, FxStage.pregrad, FxStage.forward, FxStage.backward]
+
+    _support_stages = [
+        FxStage.inference,
+        FxStage.pregrad,
+        FxStage.forward,
+        FxStage.backward,
+    ]
 
     def process(self, gm: fx.GraphModule):
         changed = False
@@ -44,24 +50,24 @@ class FoldMul1(Pattern):
         for mul in candidates:
             inp0 = mul.args[0]
             inp1 = mul.args[1]
-            res = None
+            target_val = None
             is_match = False
             if _is_one_like(inp0):
                 is_match = True
-                res = inp1
+                target_val = inp1
             elif _is_one_like(inp1):
                 is_match = True
-                res = inp0
+                target_val = inp0
 
             if is_match:
                 changed = True
                 with gm.graph.inserting_before(mul):
-                    from xpu_graph.passes.patterns.utils.expand_tensor import (
-                        expand_tensor,
+                    from xpu_graph.passes.patterns.utils.get_binary_fold_result import (
+                        get_binary_fold_result,
                     )
 
-                    expand = expand_tensor(gm, res, mul)
-                mul.replace_all_uses_with(expand)
+                    fold_res = get_binary_fold_result(gm, target_val, mul.meta)
+                mul.replace_all_uses_with(fold_res)
                 gm.graph.erase_node(mul)
 
         gm.graph.lint()
