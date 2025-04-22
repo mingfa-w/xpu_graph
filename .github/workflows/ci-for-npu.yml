@@ -22,7 +22,7 @@ jobs:
     name: Run npu tests
     runs-on: NPU
     container:
-      image: hub.byted.org/arnold/ascend_for_leo:97e006f7db4ac6506b4e61f87b12f8fa
+      image: hub.byted.org/arnold/ascend_for_leo:3579b13e2a1ce9d478cee8f35f6ffe9f
       volumes:
         - /etc/localtime:/etc/localtime
         - /usr/local/Ascend/driver:/usr/local/Ascend/driver
