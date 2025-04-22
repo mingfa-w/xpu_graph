@@ -6,7 +6,8 @@ from xpu_graph.passes.patterns.pattern import AutoMatchPattern
 
 class RemoveLayerNormCastPregrad(AutoMatchPattern):
     _opt_level = OptLevel.level2
-    _stages = [FxStage.pregrad]
+    # TODO(JYJ): Further experiments are needed to determine whether this pattern should be removed entirely or improved.
+    #_stages = [FxStage.pregrad]
 
     def rewriter(self, gm: fx.GraphModule, rule_name: str, node_map: dict) -> bool:
         assert (len(node_map) == 3)

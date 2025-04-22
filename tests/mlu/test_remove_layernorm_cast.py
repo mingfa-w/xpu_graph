@@ -55,25 +55,25 @@ class TestLayerNormCast_forward:
         assert "AutoMatchPattern.RemoveLayerNormCastForward" in caplog.text
 
 
-class TestLayerNormCast_pregrad:
-    def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=True, freeze=True, opt_level=OptLevel.level2, debug=True
-        )
-    @pytest.mark.parametrize(
-        "pattern_func",
-        [fn0],
-    )
-    def test_layernorm_cast_patterns(self, caplog, pattern_func):
-        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
-            layernorm_test(self.xpu_graph_backend, pattern_func)
-        assert "AutoMatchPattern.RemoveLayerNormCastPregrad" in caplog.text
+#class TestLayerNormCast_pregrad:
+#    def setup_class(self):
+#        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+#            is_training=True, freeze=True, opt_level=OptLevel.level2, debug=True
+#        )
+#    @pytest.mark.parametrize(
+#        "pattern_func",
+#        [fn0],
+#    )
+#    def test_layernorm_cast_patterns(self, caplog, pattern_func):
+#        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+#            layernorm_test(self.xpu_graph_backend, pattern_func)
+#        assert "AutoMatchPattern.RemoveLayerNormCastPregrad" in caplog.text
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=True, freeze=True, opt_level=OptLevel.level2, debug=True
-    )
-    layernorm_test(xpu_graph_backend, fn0)
+    #xpu_graph_backend = xpu_graph.mlu_compiler(
+    #    is_training=True, freeze=True, opt_level=OptLevel.level2, debug=True
+    #)
+    #layernorm_test(xpu_graph_backend, fn0)
     xpu_graph_backend = xpu_graph.mlu_compiler(
         is_training=False, freeze=True, opt_level=OptLevel.level2, debug=True
     )
