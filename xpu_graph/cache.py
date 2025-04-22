@@ -1,25 +1,29 @@
-import os
+import copy
 import hashlib
+import os
 import pickle
 from typing import Union
 from os import PathLike
-from .config import XpuGraphConfig
-from .utils import logger
-from .fx_utils import FxStage
+
 import torch
 from torch._dynamo.convert_frame import compile_lock
 from torch._dynamo.device_interface import get_interface_for_device
 from torch.utils._python_dispatch import _disable_current_modes
-from torch._inductor.codecache import (
-    CompiledFxGraph,
-    PyCodeCache,
-    get_path,
-    FxGraphCache,
-)
 from torch._inductor.utils import BoxedBool
+
+torch_version = torch.__version__
+if torch_version.startswith("2.6"):
+    from torch._inductor.compile_fx import CompiledFxGraph
+    from torch._inductor.codecache import PyCodeCache, get_path, FxGraphCache
+else:
+    from torch._inductor.codecache import CompiledFxGraph, PyCodeCache, get_path, FxGraphCache
 from torch.fx import GraphModule, Graph, Node
 from torch.fx.node import map_aggregate
-import copy
+from torch.utils._python_dispatch import _disable_current_modes
+
+from .config import XpuGraphConfig
+from .fx_utils import FxStage
+from .utils import logger
 
 
 class _ArgWrapper:
@@ -31,9 +35,10 @@ class _ArgWrapper:
 
 def _get_target_function(fn_name: str):
     fqn_list = fn_name.split(".")
-    import torch
-    import operator
     import builtins
+    import operator
+
+    import torch
 
     supported_mods = {"torch": torch, "operator": operator, "builtins": builtins}
     try:
@@ -88,7 +93,6 @@ class SerializeWrapper(torch.nn.Module):
                     return arg
 
             for node in nodes:
-
                 node_meta = (
                     node.name,
                     node.type,
@@ -125,9 +129,10 @@ class SerializeWrapper(torch.nn.Module):
             #      it may be in different locations in other versions
             #   2. Example_inputs in post_compile actually leads to symint guards,
             #      but we choose to not produce extra guards
-            FxGraphCache.post_compile(
-                compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs)
-            )
+            if torch_version.startswith("2.5"):
+	            FxGraphCache.post_compile(
+		        compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs)
+		    )
             return SerializeWrapper(compiled_fn)
         elif cls == GraphModule:
             gm_dict, graph_meta, nodes_meta = arg_tuple
@@ -146,9 +151,7 @@ class SerializeWrapper(torch.nn.Module):
                     return arg
 
             for node_meta in nodes_meta:
-                node_name, node_type, node_op, node_target, node_args, node_kwargs = (
-                    node_meta
-                )
+                node_name, node_type, node_op, node_target, node_args, node_kwargs = node_meta
 
                 if node_op == "call_function":
                     node_target = _get_target_function(node_target)
@@ -181,9 +184,7 @@ class XpuGraphCache:
         logger.info(f"Cache Key: {hashkey}")
         return hashkey
 
-    def save_gm(
-        self, key, value: torch.fx.GraphModule, expire=None
-    ) -> torch.fx.GraphModule:
+    def save_gm(self, key, value: torch.fx.GraphModule, expire=None) -> torch.fx.GraphModule:
         # Note: since GraphModules ser/des may do canonicalization, so the cached version should be returned
         return value
 
@@ -207,9 +208,7 @@ class XpuGraphLocalCache(XpuGraphCache):
         os.makedirs(cache_path, exist_ok=True)
         self._path = cache_path
 
-    def save_gm(
-        self, key, value: torch.fx.GraphModule, expire=None
-    ) -> torch.fx.GraphModule:
+    def save_gm(self, key, value: torch.fx.GraphModule, expire=None) -> torch.fx.GraphModule:
         artifact_path = self._graph_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
         with compile_lock, _disable_current_modes():

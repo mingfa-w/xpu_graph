@@ -8,7 +8,7 @@ on:
     branches:
       - develop
       - master
-  workflow_dispatch: 
+  workflow_dispatch:
 defaults:
   run:
     shell: bash
@@ -17,7 +17,7 @@ jobs:
     name: Run npu tests
     runs-on: NPU
     container:
-      image: hub.byted.org/aicompiler/npu.ci.debian12:devel_cann8.0.rc3.alpha003_py311_th26
+      image: hub.byted.org/aicompiler/search.pytorch260.npu.ci:py3112.th260.cann8.0.rc3.alpha003
       volumes:
         - /etc/localtime:/etc/localtime
         - /usr/local/Ascend/driver:/usr/local/Ascend/driver
@@ -30,4 +30,4 @@ jobs:
         shell: bash
         run: |
           echo "Running npu tests..."
-          # python3 -m pytest --ignore=tests/mlu --ignore=tests/xpu_ops tests
+          python3 -m pytest --ignore=tests/mlu --ignore=tests/xpu_ops --ignore=tests/common/test_inference.py tests
