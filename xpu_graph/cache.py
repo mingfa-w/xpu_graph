@@ -52,7 +52,10 @@ class SerializeWrapper(torch.nn.Module):
         self.wrapped_fn = compiled_fn
 
     def __reduce__(self):
-        return (SerializeWrapper.decode, SerializeWrapper.encode(self.wrapped_fn))
+        return (
+            SerializeWrapper.deserialize_helper,
+            SerializeWrapper.serialize_helper(self.wrapped_fn),
+        )
 
     def forward(self, *runtime_args):
         if hasattr(self.wrapped_fn, "_boxed_call") and self.wrapped_fn._boxed_call:
@@ -63,7 +66,7 @@ class SerializeWrapper(torch.nn.Module):
         return self.wrapped_fn(*runtime_args)
 
     @staticmethod
-    def encode(object):
+    def serialize_helper(object):
         if isinstance(object, CompiledFxGraph):
             mod = copy.copy(object)
             mod.current_callable = None
@@ -100,7 +103,7 @@ class SerializeWrapper(torch.nn.Module):
         else:
             raise NotImplemented(f"Unsupported type: {type(object)} for {object}")
 
-    def decode(cls, arg_tuple):
+    def deserialize_helper(cls, arg_tuple):
         logger.info(f"Deserializing a {cls.__qualname__}")
         if cls == CompiledFxGraph:
             (compiled_fn,) = arg_tuple
@@ -117,12 +120,14 @@ class SerializeWrapper(torch.nn.Module):
             ).call
             cudagraphs = compiled_fn.cudagraph_info is not None
             logger.debug(f"Cudagraphs enabled: {cudagraphs}")
-            # Note: 
+            # Note:
             #   1. This post_compile function is only available on 2.5.x,
             #      it may be in different locations in other versions
             #   2. Example_inputs in post_compile actually leads to symint guards,
             #      but we choose to not produce extra guards
-            FxGraphCache.post_compile(compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs))
+            FxGraphCache.post_compile(
+                compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs)
+            )
             return SerializeWrapper(compiled_fn)
         elif cls == GraphModule:
             gm_dict, graph_meta, nodes_meta = arg_tuple
@@ -157,7 +162,7 @@ class SerializeWrapper(torch.nn.Module):
             gm.recompile()
             return SerializeWrapper(gm)
         else:
-            raise NotImplementedError(f"Unsupported decode: {cls}, {arg_tuple}")
+            raise NotImplementedError(f"Unsupported deserialize: {cls}, {arg_tuple}")
 
 
 class XpuGraphCache:
