@@ -77,10 +77,11 @@ class SerializeWrapper(torch.nn.Module):
             mod.current_callable = None
             return (CompiledFxGraph, (mod,))
         elif isinstance(object, GraphModule):
-            if len(object._modules) > 0:
-                raise NotImplemented("Only fully-inlined graph module is supported")
             gm_dict = object.__dict__.copy()
             del gm_dict["_graph"]
+            for k, v in gm_dict["_modules"].items():
+                if isinstance(v, GraphModule):
+                    gm_dict["_modules"][k] = SerializeWrapper(v)
             graph = object.graph
             graph_meta = (graph._tracer_cls, graph._tracer_extras)
             nodes = list(graph.nodes)
