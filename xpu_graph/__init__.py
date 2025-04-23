@@ -13,8 +13,9 @@ __all__ = [
     "XpuGraphCache",
     "default_cache",
     "mlu_compiler",
-    "ascend_compiler"
+    "ascend_compiler",
 ]
+
 
 def ascend_compiler(
     freeze: bool = False,
@@ -35,6 +36,7 @@ def ascend_compiler(
     )
     return XpuGraph(config, cache)
 
+
 def mlu_compiler(
     is_training: bool,
     **patch_configs,
@@ -53,15 +55,7 @@ def mlu_compiler(
     Returns:
         An XpuGraph instance configured for MLU.
     """
-
-    default_config = _MLU_TRAIN_CONFIG if is_training else _MLU_INFER_CONFIG
-
     assert "target" not in patch_configs, "target is not allowed to be set here"
-    if "opt_level" in patch_configs and not isinstance(
-        patch_configs["opt_level"], OptLevel
-    ):
-        patch_configs["opt_level"] = OptLevel(int(patch_configs["opt_level"]))
-    config = dataclasses.replace(default_config, **patch_configs)
 
     if "cache" not in patch_configs:
         cache = no_cache() if is_training else default_cache()
@@ -72,10 +66,24 @@ def mlu_compiler(
             patch_configs["cache"], XpuGraphCache
         ), "cache must be a XpuGraphCache instance"
         cache = patch_configs["cache"]
-        
+
+    default_config = _MLU_TRAIN_CONFIG if is_training else _MLU_INFER_CONFIG
+
+    if "opt_level" in patch_configs and not isinstance(
+        patch_configs["opt_level"], OptLevel
+    ):
+        patch_configs["opt_level"] = OptLevel(int(patch_configs["opt_level"]))
+    patch_configs = {
+        field.name: patch_configs[field.name]
+        for field in dataclasses.fields(XpuGraphConfig)
+        if field.name in patch_configs
+    }
+    config = dataclasses.replace(default_config, **patch_configs)
+
     if not is_training:
         import torch_mlu_ops
     return XpuGraph(config, cache)
+
 
 _MLU_TRAIN_CONFIG = XpuGraphConfig(
     is_training=True,
