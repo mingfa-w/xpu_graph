@@ -108,12 +108,18 @@ def fn19(inputs, weight, bias):
     return output
 
 
+def fn20(inputs, weight, bias):
+    output = fn3(inputs, weight, bias).reshape(128, 32, 16)
+    output = torch.sigmoid(output)
+    return output.view(-1).reshape(128, 32, 16)
+
+
 def matmul_test(xpu_graph_backend, func):
     if func in [fn0, fn1, fn9]:
         inputs = torch.randn((4096, 768), device=device, dtype=data_type)
         weight = torch.randn((768, 16), device=device, dtype=data_type)
         bias = torch.randn((16), device=device, dtype=data_type)
-    elif func in [fn2, fn3, fn10, fn11, fn12, fn13, fn14, fn15, fn16, fn17]:
+    elif func in [fn2, fn3, fn10, fn11, fn12, fn13, fn14, fn15, fn16, fn17, fn20]:
         inputs = torch.randn((4096, 768), device=device, dtype=data_type)
         weight = torch.randn((16, 768), device=device, dtype=data_type)
         bias = torch.randn((16), device=device, dtype=data_type)
@@ -171,6 +177,7 @@ class TestMatMul:
             fn17,
             fn18,
             fn19,
+            fn20,
         ],
     )
     def test_matmul_patterns(self, caplog, pattern_func):
@@ -183,11 +190,14 @@ class TestMatMul:
         else:
             assert "Pattern.FusedMatMulAct changed graph" in caplog.text
 
+
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, opt_level=OptLevel.level2
+        is_training=False, opt_level=OptLevel.level2, debug=True
     )
-    matmul_test(xpu_graph_backend, fn16)
+    matmul_test(xpu_graph_backend, fn20)
+    """
     matmul_test(xpu_graph_backend, fn17)
     matmul_test(xpu_graph_backend, fn18)
     matmul_test(xpu_graph_backend, fn19)
+    """
