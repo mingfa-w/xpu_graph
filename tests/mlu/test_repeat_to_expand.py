@@ -1,5 +1,6 @@
 import math
 import pytest
+import random
 
 import torch
 import xpu_graph
@@ -17,16 +18,27 @@ def fn0(input, input_num, bs, in_dim):
     sqa = sqa.unsqueeze(-1).repeat(1, 1, in_dim)
     return input.gather(index=sqa, dim=1)
 
+def fn1(input, a, b):
+    output = input.repeat(1, 32)
+    output = torch.where(output, a, b)
+    return output
 
 def gather_test(xpu_graph_backend, func):
-    batch = 86
-    in_dim = 256
-    dtype = torch.half
-    input = torch.randn(batch, 496, in_dim, dtype=dtype, device="mlu")
-    res1 = func(input, 46, batch, in_dim)
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
-    res = compiled(input, 46, batch, in_dim)
-
+    dtype = torch.half
+    if func == fn0:
+        batch = 86
+        in_dim = 256
+        input = torch.randn(batch, 496, in_dim, dtype=dtype, device="mlu")
+        res1 = func(input, 46, batch, in_dim)
+        res = compiled(input, 46, batch, in_dim)
+    if func == fn1:
+        random_list = random.choices([0, 1], k=86)
+        input = torch.tensor(random_list, device="mlu").unsqueeze(-1).bool()
+        a = torch.randn(86, 32, dtype=dtype, device="mlu")
+        b = torch.randn(86, 32, dtype=dtype, device="mlu")
+        res1 = func(input, a, b)
+        res = compiled(input, a, b)
     assert torch.equal(res.cpu().float(), res1.cpu().float())
 
 
@@ -38,12 +50,18 @@ class TestGather:
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn0],
+        [
+            fn0,
+            fn1
+        ],
     )
     def test_gather_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             gather_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.FusedGatherToCopy changed graph" in caplog.text
+        if pattern_func == fn0:
+            assert "Pattern.FusedGatherToCopy changed graph" in caplog.text
+        if pattern_func == fn1:
+            assert "Pattern.Repeat2Expand changed graph" in caplog.text
 
 
 if __name__ == "__main__":
@@ -51,3 +69,4 @@ if __name__ == "__main__":
         is_training=False, debug=True, opt_level=OptLevel.level1
     )
     gather_test(xpu_graph_backend, fn0)
+    gather_test(xpu_graph_backend, fn1)
