@@ -51,18 +51,14 @@ class PassManager:
 
         changed = True
         while changed:
-            from torch.fx.passes.shape_prop import ShapeProp
-            from torch.fx.passes.fake_tensor_prop import FakeTensorProp
+            from xpu_graph.passes.fake_tensor_prop import FakeTensorProp
             from torch._guards import active_fake_mode
 
-            ShapeProp(gm).propagate(*example_inputs)
             FakeTensorProp(gm, active_fake_mode()).propagate(*example_inputs)
 
             changed = False
             for optimizer in self._enable_passes:
                 changed = changed or optimizer(gm)
-
-        gm.recompile()
 
         if self._config.enable_cache:
             # Note: Currently, we only inline modules with a E2E make_fx, just for serialize / desrialize

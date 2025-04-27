@@ -2,6 +2,7 @@ import torch
 import torch.fx as fx
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.check_ops import is_zero_like
 
 
 class FoldSub0(Pattern):
@@ -49,7 +50,7 @@ class FoldSub0(Pattern):
             inp1 = sub.args[1]
             target_val = None
             is_match = False
-            if _is_zero_like(inp1):
+            if is_zero_like(inp1):
                 is_match = True
                 target_val = inp0
 
@@ -64,6 +65,4 @@ class FoldSub0(Pattern):
                 sub.replace_all_uses_with(fold_res)
                 gm.graph.erase_node(sub)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

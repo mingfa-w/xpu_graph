@@ -6,7 +6,7 @@ from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
 
 def can_fold_test(xpu_graph):
     def _can_fold(x):
-        y = torch.ops.aten._to_copy.default(x)
+        y = torch.ops.aten.clone.default(x)
         return x + y
 
     x = torch.randn(128, 64)
@@ -18,7 +18,7 @@ def can_fold_test(xpu_graph):
 
 def cannot_fold_test(xpu_graph):
     def _cannot_fold(x):
-        y = torch.ops.aten._to_copy.default(x)
+        y = torch.ops.aten.clone.default(x)
         return y
 
     x = torch.randn(10, 10)
@@ -36,12 +36,12 @@ class TestFoldToCopy:
     def test_can_fold_case(self, caplog):
         with need_xpu_graph_logs():
             can_fold_test(self.xpu_graph)
-            assert "Pattern.FoldToCopy changed graph" in caplog.text
+            assert "Pattern.FoldClone changed graph" in caplog.text
 
     def test_cannot_fold_case(self, caplog):
         with need_xpu_graph_logs():
             cannot_fold_test(self.xpu_graph)
-            assert "Pattern.FoldToCopy changed graph" not in caplog.text
+            assert "Pattern.FoldClone changed graph" not in caplog.text
 
 
 if __name__ == "__main__":

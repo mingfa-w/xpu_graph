@@ -44,7 +44,7 @@ def _is_mm_view_add(
     if (
         isinstance(bias_node, float)
         or isinstance(bias_node, int)
-        or len(bias_node.meta["tensor_meta"].shape) > 2
+        or len(bias_node.meta["val"].shape) > 2
     ):
         return False, ()
 
@@ -117,6 +117,4 @@ class FusedAddMM(Pattern):
 
                 changed = True
 
-        graph_module.graph.lint()
-        graph_module.recompile()
         return changed

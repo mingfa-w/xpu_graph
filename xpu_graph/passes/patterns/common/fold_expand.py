@@ -32,12 +32,10 @@ class FoldExpand(Pattern):
         for expand in candidates:
             inp = expand.args[0]
             target_shape = expand.args[1]
-            org_shape = list(inp.meta["tensor_meta"].shape)
+            org_shape = list(inp.meta["val"].shape)
             if _same_shape(org_shape, target_shape):
                 changed = True
                 expand.replace_all_uses_with(inp)
                 gm.graph.erase_node(expand)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

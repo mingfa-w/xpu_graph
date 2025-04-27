@@ -17,9 +17,6 @@ class FoldCat(Pattern):
         return gm.graph.call_function(
             torch.ops.aten._to_copy.default,
             args=(src,),
-            kwargs={
-                "memory_format": torch.contiguous_format,
-            },
         )
 
     def process(self, gm: fx.GraphModule):
@@ -40,8 +37,6 @@ class FoldCat(Pattern):
                 cat.replace_all_uses_with(fold_res)
                 gm.graph.erase_node(cat)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed
 
 
@@ -61,14 +56,14 @@ class FoldCatCat(Pattern):
                 continue
             if node.meta == {}:
                 continue
-            if cat_axis == len(node.meta["tensor_meta"].shape) - 1:
+            if cat_axis == len(node.meta["val"].shape) - 1:
                 cat_axis = -1
             cat_input = []
             foldable = False
             for inp in node.args[0]:
                 is_input_cat, input_cat_axis = check_cat_op(inp)
                 if is_input_cat:
-                    if input_cat_axis == len(inp.meta["tensor_meta"].shape) - 1:
+                    if input_cat_axis == len(inp.meta["val"].shape) - 1:
                         input_cat_axis = -1
                     if len(inp.users) == 1 and cat_axis == input_cat_axis:
                         cat_input += inp.args[0]
@@ -85,7 +80,8 @@ class FoldCatCat(Pattern):
                         args=(cat_input, cat_axis),
                         name=node.name + "_1",
                     )
-                    node.replace_all_uses_with(concat_node)
-                    gm.graph.erase_node(node)
+                node.replace_all_uses_with(concat_node)
+                gm.graph.erase_node(node)
                 changed = True
+
         return changed

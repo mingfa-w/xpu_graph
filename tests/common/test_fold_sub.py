@@ -1,0 +1,39 @@
+import pytest
+import torch
+import xpu_graph
+from xpu_graph.test_utils import is_similar, need_xpu_graph_logs
+
+
+def sub_scalar_zero(x):
+    return x - 0
+
+
+def sub_tensor_zero(x):
+    return x - torch.zeros_like(x)
+
+
+def can_fold_test(xpu_graph, func, x):
+    compiled = torch.compile(func, backend=xpu_graph, dynamic=False)
+    expect = func(x)
+    res = compiled(x)
+    assert is_similar(expect, res)
+
+
+class TestFoldSub:
+    def setup_class(self):
+        config = xpu_graph.config.XpuGraphConfig(is_training=False)
+        self.xpu_graph = xpu_graph.compiler.XpuGraph(config)
+
+    x = torch.rand(100)
+
+    @pytest.mark.parametrize("func, x", [(sub_scalar_zero, x), (sub_tensor_zero, x)])
+    def test_can_fold_case(self, caplog, func, x):
+        with need_xpu_graph_logs():
+            can_fold_test(self.xpu_graph, func, x)
+            assert "Pattern.FoldSub0 changed graph" in caplog.text
+
+
+if __name__ == "__main__":
+    config = xpu_graph.config.XpuGraphConfig(is_training=False)
+    xpu_graph = xpu_graph.compiler.XpuGraph(config)
+    can_fold_test(xpu_graph)

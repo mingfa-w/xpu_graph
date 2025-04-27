@@ -193,6 +193,4 @@ class FusedLayerNorm(Pattern):
             node.replace_all_uses_with(layer_norm_node)
             changed = True
 
-        graph_module.graph.lint()
-        graph_module.recompile()
         return changed

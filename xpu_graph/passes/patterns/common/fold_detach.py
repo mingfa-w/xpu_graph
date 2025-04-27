@@ -21,6 +21,4 @@ class FoldDetach(Pattern):
             detach.replace_all_uses_with(inp)
             gm.graph.erase_node(detach)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

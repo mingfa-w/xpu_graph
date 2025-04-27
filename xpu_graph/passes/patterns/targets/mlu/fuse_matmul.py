@@ -70,7 +70,7 @@ class MMParam:
         elif check_t_op(node):
             self.weight1_trans = True
             node = node.args[0]
-        weight1_shape = node.meta["tensor_meta"].shape
+        weight1_shape = node.meta["val"].shape
         if len(weight1_shape) != 2:
             logger.warning(f"MatMul pass: Unsupported weight dim {weight1_shape}")
             return False
@@ -82,7 +82,7 @@ class MMParam:
         return True
 
     def set_input(self, node):
-        input_shape = node.meta["tensor_meta"].shape
+        input_shape = node.meta["val"].shape
         if len(input_shape) != 2:
             logger.warning(f"MatMul pass: Unsupported input dim {input_shape}")
             return False
@@ -150,7 +150,7 @@ class MMParam:
         else:
             n2, k2 = self.weight1_shape
 
-        bias_shape = bias.meta["tensor_meta"].shape
+        bias_shape = bias.meta["val"].shape
         if len(bias_shape) == 1:
             if (bias_shape != torch.Size([n2])) and (bias_shape != torch.Size([1])):
                 return False
@@ -396,10 +396,9 @@ class FusedMatMul(Pattern):
         )
         is_modified |= match_mm(graph_module)
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_1_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
 
         return is_modified
+
 
 class FusedMatMulAdd(Pattern):
     _opt_level = OptLevel.level2
@@ -412,10 +411,9 @@ class FusedMatMulAdd(Pattern):
         is_modified |= match_mm_add1(graph_module)
         is_modified |= match_mm_add2(graph_module)
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_2_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
 
         return is_modified
+
 
 class FusedMatMulAct(Pattern):
     _opt_level = OptLevel.level2
@@ -433,7 +431,5 @@ class FusedMatMulAct(Pattern):
         is_modified |= match_mm_act(graph_module)
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_3_replacement")
         is_modified |= match_mm_view(graph_module, "mlu_tmo_fused_matmul_4_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
 
         return is_modified

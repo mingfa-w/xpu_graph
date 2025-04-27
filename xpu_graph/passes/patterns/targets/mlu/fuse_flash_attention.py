@@ -31,6 +31,7 @@ def tmo_fa_forward(
     output_dtype: torch.dtype,
 ) -> torch.Tensor:
     import torch_mlu_ops
+
     if query.dtype != output_dtype:
         query = query.to(output_dtype)
     if key.dtype != output_dtype:
@@ -255,6 +256,4 @@ class FusedFlashAttention(Pattern):
             node.replace_all_uses_with(fused)
             modified = True
 
-        graph_module.graph.lint()
-        graph_module.recompile()
         return modified

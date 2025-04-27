@@ -7,8 +7,9 @@ from xpu_graph.passes.patterns.pattern import AutoMatchPattern
 
 class RemoveLayerNormCastPregrad(AutoMatchPattern):
     _opt_level = OptLevel.level2
+
     # TODO(JYJ): Further experiments are needed to determine whether this pattern should be removed entirely or improved.
-    #_support_stages = [FxStage.pregrad]
+    # _support_stages = [FxStage.pregrad]
     def rewriter(self, gm: fx.GraphModule, rule_name: str, node_map: dict) -> bool:
         return False
         assert len(node_map) == 3
@@ -18,14 +19,14 @@ class RemoveLayerNormCastPregrad(AutoMatchPattern):
 
         def _can_remove(pre_cast: fx.Node, post_cast: fx.Node) -> bool:
             inp = pre_cast.args[0]
-            if inp.meta["tensor_meta"].dtype not in (
+            if inp.meta["val"].dtype not in (
                 torch.bfloat16,
                 torch.float16,
             ):
                 return False
             if pre_cast.kwargs["dtype"] != torch.float:
                 return False
-            if post_cast.kwargs["dtype"] != inp.meta["tensor_meta"].dtype:
+            if post_cast.kwargs["dtype"] != inp.meta["val"].dtype:
                 return False
             return True
 
@@ -35,6 +36,4 @@ class RemoveLayerNormCastPregrad(AutoMatchPattern):
         layernorm.replace_input_with(layernorm.args[0], pre_cast.args[0])
         post_cast.replace_all_uses_with(layernorm)
 
-        gm.graph.lint()
-        gm.recompile()
         return True

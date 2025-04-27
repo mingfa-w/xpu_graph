@@ -93,6 +93,4 @@ class FusedRMSNorm(Pattern):
                 graph_module.graph.erase_node(pow_node)
             is_modified = True
 
-        graph_module.graph.lint()
-        graph_module.recompile()
         return is_modified

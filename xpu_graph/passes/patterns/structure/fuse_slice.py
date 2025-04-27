@@ -1,5 +1,6 @@
 import torch
 from torch import nn, fx
+
 # import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
 from typing import Callable
@@ -99,6 +100,5 @@ class FusedSlice(Pattern):
                     n.replace_all_uses_with(new_n)
                     graph_module.graph.erase_node(n)
                 changed = True
-        graph_module.graph.lint()
-        graph_module.recompile()
+
         return changed

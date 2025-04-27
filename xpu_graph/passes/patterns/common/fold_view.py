@@ -31,14 +31,12 @@ class FoldView0(Pattern):
         for view in candidates:
             inp = view.args[0]
             target_shape = view.args[1]
-            if target_shape == list(inp.meta["tensor_meta"].shape):
+            if target_shape == list(inp.meta["val"].shape):
                 changed = True
 
                 view.replace_all_uses_with(inp)
                 gm.graph.erase_node(view)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed
 
 
@@ -81,6 +79,4 @@ class FoldView1(Pattern):
                 changed = True
                 view.replace_input_with(inp, inp.args[0])
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

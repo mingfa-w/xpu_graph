@@ -2,6 +2,7 @@ import torch
 import torch.fx as fx
 from xpu_graph.fx_utils import FxStage
 from xpu_graph.passes.patterns.pattern import Pattern
+from xpu_graph.passes.patterns.utils.check_ops import is_one_like
 
 
 class FoldMul1(Pattern):
@@ -28,34 +29,15 @@ class FoldMul1(Pattern):
             if node.op == "call_function" and node.target in mul_tup
         ]
 
-        def _is_one_like(inp) -> bool:
-            scalar_tup = (
-                int,
-                float,
-            )
-            if type(inp) in scalar_tup and inp == 1:
-                return True
-            one_like_tup = (
-                torch.ops.aten.ones_like.default,
-                torch.ops.aten.ones.default,
-            )
-            if (
-                isinstance(inp, fx.Node)
-                and inp.op == "call_function"
-                and inp.target in one_like_tup
-            ):
-                return True
-            return False
-
         for mul in candidates:
             inp0 = mul.args[0]
             inp1 = mul.args[1]
             target_val = None
             is_match = False
-            if _is_one_like(inp0):
+            if is_one_like(inp0):
                 is_match = True
                 target_val = inp1
-            elif _is_one_like(inp1):
+            elif is_one_like(inp1):
                 is_match = True
                 target_val = inp0
 
@@ -70,6 +52,4 @@ class FoldMul1(Pattern):
                 mul.replace_all_uses_with(fold_res)
                 gm.graph.erase_node(mul)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed
