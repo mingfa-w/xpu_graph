@@ -59,9 +59,11 @@ class Optimizer(ABC):
                 shutil.rmtree(dirname)
             os.makedirs(dirname)
             if run("dot -h", shell=True).returncode != 0:
+                raise RuntimeError("dot command is not found! Try apt install -y graphviz.")
                 # TODO(liuyuan): Maybe use yum according to the kernel.
                 # NOTE(liuyuan): graphviz should be installed for the following method [get_dot_graph()]
-                run("apt install -y graphviz", shell=True, check=True)
+                # run("apt install -y graphviz", shell=True, check=True)
+
 
         filename = os.path.join(dirname, f"optimization_{opt_times}_after_pass_{self.__class__.__name__}")
         
