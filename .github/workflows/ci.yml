@@ -7,9 +7,24 @@ on:
       - 'xpu_graph/backend/ascend.py'
       - 'xpu_graph/backend/npu.py'
       - 'xpu_graph/passes/patterns/targets/ascend/'
+      - 'xpu_graph/passes/patterns/targets/npu/'
       - 'tests/ascend'
+      - 'tests/npu'
+      - 'tests/ops'
       - 'docker/*'
     types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - master
+    paths_ignore:
+      - 'xpu_graph/backend/ascend.py'
+      - 'xpu_graph/backend/npu.py'
+      - 'xpu_graph/passes/patterns/targets/ascend/'
+      - 'xpu_graph/passes/patterns/targets/npu/'
+      - 'tests/ascend'
+      - 'tests/npu'
+      - 'tests/ops'
+      - 'docker/*'
   workflow_dispatch:
 defaults:
   run:

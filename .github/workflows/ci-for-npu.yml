@@ -3,16 +3,21 @@ on:
   pull_request:
     branches:
       - master
+    types: [opened, synchronize, reopened]
     paths_ignore:
       - 'xpu_graph/backend/mlu.py'
       - 'xpu_graph/passes/patterns/targets/mlu/'
       - 'tests/mlu'
       - 'docker/*'
-    types: [opened, synchronize, reopened]
   push:
     branches:
       - develop
       - master
+    paths_ignore:
+      - 'xpu_graph/backend/mlu.py'
+      - 'xpu_graph/passes/patterns/targets/mlu/'
+      - 'tests/mlu'
+      - 'docker/*'
   workflow_dispatch:
 defaults:
   run:
