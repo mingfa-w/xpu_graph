@@ -23,9 +23,6 @@ class FoldReduce(Pattern):
         copy = gm.graph.call_function(
             torch.ops.aten._to_copy.default,
             args=(src,),
-            kwargs={
-                "memory_format": torch.contiguous_format,
-            },
         )
         if keep_dim:
             return copy
@@ -53,13 +50,11 @@ class FoldReduce(Pattern):
             if not isinstance(dims, list):
                 dims = [dims]
             keep_dim = get_input_kw_node(reduce, "keepdim") or False
-            if all([inp.meta["tensor_meta"].shape[dim] == 1 for dim in dims]):
+            if all([inp.meta["val"].shape[dim] == 1 for dim in dims]):
                 changed = True
                 with gm.graph.inserting_before(reduce):
                     fold_res = self._get_fold_result(gm, inp, dims, keep_dim)
                     reduce.replace_all_uses_with(fold_res)
                     gm.graph.erase_node(reduce)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

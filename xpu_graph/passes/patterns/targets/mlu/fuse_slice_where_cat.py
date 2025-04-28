@@ -11,7 +11,7 @@ from ...utils.check_ops import (
     check_where_op,
     check_zeros_op,
     check_slice_op,
-    check_stack_op
+    check_stack_op,
 )
 from .triton_kernel.fused_slice_where_cat import fuse_slice_where_cat
 
@@ -25,12 +25,16 @@ class FusedSliceWhereCatReplacement(nn.Module):
         unmatched_nodes,
         cat_dim,
         slice_dim,
-        slice_params
+        slice_params,
     ):
-        slice_param_tensor = torch.tensor(slice_params, dtype=torch.int32, device=where_input.device)
+        slice_param_tensor = torch.tensor(
+            slice_params, dtype=torch.int32, device=where_input.device
+        )
         slice_num = int(len(slice_params))
 
-        cat_matched = fuse_slice_where_cat(where_input, slice_input, slice_param_tensor, zeros_param[1], slice_num)
+        cat_matched = fuse_slice_where_cat(
+            where_input, slice_input, slice_param_tensor, zeros_param[1], slice_num
+        )
 
         if unmatched_nodes:
             unmatched_nodes = unmatched_nodes + [cat_matched]
@@ -39,6 +43,7 @@ class FusedSliceWhereCatReplacement(nn.Module):
         else:
             return cat_matched
 
+
 def find_matching_nodes(cat_node):
     cat_inputs = cat_node.args[0]
     last_input = cat_inputs[-1]
@@ -46,7 +51,7 @@ def find_matching_nodes(cat_node):
     if not check_where_op(last_input):
         return False, ()
     matched_nodes = [last_input]
-    
+
     if not hasattr(last_input, "args") or len(last_input.args) != 3:
         return False, ()
 
@@ -70,7 +75,12 @@ def find_matching_nodes(cat_node):
         if not check_slice_op(y_):
             break
 
-        if condition_ == condition and x_ == x and y_.args[0] == y.args[0] and y_.args[1] == y.args[1] == 1:
+        if (
+            condition_ == condition
+            and x_ == x
+            and y_.args[0] == y.args[0]
+            and y_.args[1] == y.args[1] == 1
+        ):
             matched_nodes.append(node)
             slice_params.append(y_.args[2])
         else:
@@ -80,7 +90,15 @@ def find_matching_nodes(cat_node):
         return False, ()
 
     unmatched_nodes = [node for node in cat_inputs if node not in matched_nodes[::-1]]
-    return True, (condition, slice_input, zeros_param, unmatched_nodes, slice_dim, slice_params[::-1])
+    return True, (
+        condition,
+        slice_input,
+        zeros_param,
+        unmatched_nodes,
+        slice_dim,
+        slice_params[::-1],
+    )
+
 
 def _is_slice_where_cat(
     node: fx.Node,
@@ -92,8 +110,8 @@ def _is_slice_where_cat(
     if not is_match:
         return False, (), ()
 
-    where_input_shape = param_tuple[0].meta["tensor_meta"].shape
-    slice_input_shape = param_tuple[1].meta["tensor_meta"].shape
+    where_input_shape = param_tuple[0].meta["val"].shape
+    slice_input_shape = param_tuple[1].meta["val"].shape
     if len(where_input_shape) != 2 or len(slice_input_shape) != 2:
         return False, (), ()
     if where_input_shape[1] != 1:
@@ -105,6 +123,7 @@ def _is_slice_where_cat(
 
     return True, param_tuple, cat_dim
 
+
 def _is_stack_to_cat(
     node: fx.Node,
 ) -> tuple[bool, Optional[fx.Node], Optional[fx.Node], Optional[fx.Node]]:
@@ -114,21 +133,24 @@ def _is_stack_to_cat(
     cat_inputs = node.args[0]
     last_input = cat_inputs[-1]
     stack_inputs = []
-    if len (last_input.users) == 1:
+    if len(last_input.users) == 1:
         return False, ()
     for key, _ in last_input.users.items():
         if check_stack_op(key) and len(key.args) == 1 and key.args[0] == cat_inputs:
-            shape = last_input.meta["tensor_meta"].shape
+            shape = last_input.meta["val"].shape
             input_nums = len(cat_inputs)
             return True, (key, cat_inputs, shape, input_nums)
     return False, ()
+
 
 class FusedSliceWhereCat(Pattern):
     _opt_level = OptLevel.level2
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
-        graph_module.add_submodule("mlu_triton_slice_where_cat_replacement", FusedSliceWhereCatReplacement())
+        graph_module.add_submodule(
+            "mlu_triton_slice_where_cat_replacement", FusedSliceWhereCatReplacement()
+        )
         for node in reversed(graph_module.graph.nodes):
             is_change_stack, stack_params = _is_stack_to_cat(node)
             is_match, param_tuple, cat_dim = _is_slice_where_cat(node)
@@ -139,7 +161,7 @@ class FusedSliceWhereCat(Pattern):
                     zeros_param,
                     unmatched_nodes,
                     slice_dim,
-                    slice_params
+                    slice_params,
                 ) = param_tuple
 
                 if is_change_stack:
@@ -151,7 +173,14 @@ class FusedSliceWhereCat(Pattern):
                         )
                         reshape_node = graph_module.graph.call_function(
                             torch.ops.aten.view.default,
-                            args=(cat_node, [stack_params[2][0], stack_params[3], stack_params[2][1]]),
+                            args=(
+                                cat_node,
+                                [
+                                    stack_params[2][0],
+                                    stack_params[3],
+                                    stack_params[2][1],
+                                ],
+                            ),
                             kwargs={},
                         )
                         permute_node = graph_module.graph.call_function(
@@ -172,7 +201,7 @@ class FusedSliceWhereCat(Pattern):
                             unmatched_nodes,
                             cat_dim,
                             slice_dim,
-                            slice_params
+                            slice_params,
                         ),
                     )
 
@@ -180,6 +209,4 @@ class FusedSliceWhereCat(Pattern):
                 graph_module.graph.erase_node(node)
                 is_modified = True
 
-        graph_module.graph.lint()
-        graph_module.recompile()
         return is_modified

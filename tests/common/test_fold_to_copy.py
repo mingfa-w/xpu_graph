@@ -28,7 +28,7 @@ def cannot_fold_test(xpu_graph):
     assert is_similar(expect, res)
 
 
-class TestCat:
+class TestFoldToCopy:
     def setup_class(self):
         config = xpu_graph.config.XpuGraphConfig(is_training=False)
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)

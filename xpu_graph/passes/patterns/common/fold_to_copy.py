@@ -40,7 +40,7 @@ class FoldToCopy(Pattern):
             inp = copy.args[0]
             if "val" not in inp.meta or "val" not in copy.meta:
                 return False
-            if inp.meta["tensor_meta"].dtype != copy.meta["tensor_meta"].dtype:
+            if inp.meta["val"].dtype != copy.meta["val"].dtype:
                 return False
             if "layout" in copy.kwargs:
                 return False
@@ -49,11 +49,13 @@ class FoldToCopy(Pattern):
                 return False
             if "pin_memory" in copy.kwargs or "non_blocking" in copy.kwargs:
                 return False
-            if (
-                inp.meta["tensor_meta"].memory_format
-                != copy.meta["tensor_meta"].memory_format
-            ):
-                return False
+            if "memory_format" in copy.kwargs:
+                return (
+                    "tensor_meta" in inp.meta
+                    and "tensor_meta" in copy.meta
+                    and inp.meta["tensor_meta"].memory_format
+                    == copy.meta["tensor_meta"].memory_format
+                )
             return True
 
         for _to_copy in candidates:
@@ -62,6 +64,4 @@ class FoldToCopy(Pattern):
                 _to_copy.replace_all_uses_with(_to_copy.args[0])
                 gm.graph.erase_node(_to_copy)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

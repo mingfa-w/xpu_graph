@@ -12,15 +12,28 @@ from ...utils.check_ops import (
     check_norm_op,
 )
 
+
 class FusedLayernormMMReplacement(nn.Module):
     def forward(
-        self, inputs, norm_weight, norm_bias, eps, q_weight, q_bias, trans_b, shape_param,
-        k_weight=None, k_bias=None, v_weight=None, v_bias=None,
+        self,
+        inputs,
+        norm_weight,
+        norm_bias,
+        eps,
+        q_weight,
+        q_bias,
+        trans_b,
+        shape_param,
+        k_weight=None,
+        k_bias=None,
+        v_weight=None,
+        v_bias=None,
     ):
         import torch_mlu_ops
+
         if inputs.stride()[-1] != 1:
             inputs = inputs.contiguous()
-        
+
         if q_bias != None:
             if isinstance(q_bias, int):
                 dim = q_weight.shape[1] if trans_b == False else q_weight.shape[0]
@@ -44,9 +57,9 @@ class FusedLayernormMMReplacement(nn.Module):
             norm_weight,
             norm_bias,
             eps,
-            #out_layout,
-            #head_size,
-            #norm_out,
+            # out_layout,
+            # head_size,
+            # norm_out,
         )
         if inputs.dim() == 2 and output.dim() == 3 and output.shape[0] == 1:
             output = output.squeeze(0)
@@ -54,11 +67,14 @@ class FusedLayernormMMReplacement(nn.Module):
             output = output.view(shape_param)
         return output
 
+
 def _is_layernorm_mm(
     node: fx.Node,
 ) -> tuple[bool, Optional[fx.Node]]:
-    if node.target != "mlu_tmo_fused_matmul_1_replacement" and \
-       node.target != "mlu_tmo_fused_matmul_2_replacement":
+    if (
+        node.target != "mlu_tmo_fused_matmul_1_replacement"
+        and node.target != "mlu_tmo_fused_matmul_2_replacement"
+    ):
         return False, ()
     getitem_node = node.args[0]
     if not check_getitem_op(getitem_node):
@@ -82,12 +98,21 @@ def _is_layernorm_mm(
     shape_param = node.args[6]
 
     if q_bias != None:
-        q_bias_shape = q_bias.meta["tensor_meta"].shape
+        q_bias_shape = q_bias.meta["val"].shape
         if len(q_bias_shape) == 2 and q_bias_shape[0] > 1:
             return False, ()
 
-    return True, (inputs, norm_weight, norm_bias, eps, q_weight, q_bias, trans_b, shape_param)
-    
+    return True, (
+        inputs,
+        norm_weight,
+        norm_bias,
+        eps,
+        q_weight,
+        q_bias,
+        trans_b,
+        shape_param,
+    )
+
 
 class FusedLayernormMM(Pattern):
     _opt_level = OptLevel.level2
@@ -105,10 +130,9 @@ class FusedLayernormMM(Pattern):
                     new_node = graph_module.graph.call_module(
                         "mlu_tmo_fused_norm_mm_replacement",
                         args=(params),
-                )
+                    )
                 node.replace_all_uses_with(new_node)
                 graph_module.graph.erase_node(node)
                 is_modified = True
-        graph_module.graph.lint()
-        graph_module.recompile()
+
         return is_modified

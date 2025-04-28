@@ -58,6 +58,4 @@ class Gelu(AutoMatchPattern):
                 )
             mul5_node.replace_all_uses_with(gelu_node)
 
-        gm.graph.lint()
-        gm.recompile()
         return True

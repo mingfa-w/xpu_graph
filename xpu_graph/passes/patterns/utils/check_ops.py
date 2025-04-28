@@ -2,7 +2,9 @@ import torch
 import operator
 from torch import nn, fx
 from torch.fx.operator_schemas import normalize_function, normalize_module
-from typing import Union, Tuple
+from typing import Union, Tuple, Any
+
+aten = torch.ops.aten
 
 
 def _is_valid_node(node: fx.Node) -> bool:
@@ -74,41 +76,45 @@ def check_op(node: fx.Node, target) -> bool:
 
 
 def check_sqrt_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.sqrt.default)
+    return check_op(node, aten.sqrt.default)
 
 
 def check_rsqrt_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.rsqrt.default)
+    return check_op(node, aten.rsqrt.default)
 
 
 def check_add_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.add.Tensor)
+    return check_op(node, aten.add.Tensor)
 
 
 def check_sub_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.sub.Tensor)
+    return check_op(node, aten.sub.Tensor)
+
+
+def check_div_op(node: fx.Node) -> bool:
+    return check_op(node, torch.ops.aten.div.Tensor)
 
 
 def check_mean_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.mean.dim)
+    return check_op(node, aten.mean.dim)
 
 
 def check_var_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.var.dim)
+    return check_op(node, aten.var.dim)
 
 
 def check_pow_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.pow.Tensor_Scalar)
+    return check_op(node, aten.pow.Tensor_Scalar)
 
 
 def check_mul_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.mul.Tensor)
+    return check_op(node, aten.mul.Tensor)
 
 
 def check_meta(node: fx.Node) -> bool:
     if node.meta == {}:
         return False
-    if "tensor_meta" not in node.meta:
+    if "val" not in node.meta:
         return False
     return True
 
@@ -116,17 +122,17 @@ def check_meta(node: fx.Node) -> bool:
 def check_meta_2d(node: fx.Node) -> bool:
     if not check_meta(node):
         return False
-    if len(node.meta["tensor_meta"].shape) == 2:
+    if len(node.meta["val"].shape) == 2:
         return True
     return False
 
 
 def get_shape(node: fx.Node):
-    return node.meta["tensor_meta"].shape
+    return node.meta["val"].shape
 
 
 def get_dtype(node: fx.Node):
-    return node.meta["tensor_meta"].dtype
+    return node.meta["val"].dtype
 
 
 def check_sub_or_add_op(
@@ -136,12 +142,12 @@ def check_sub_or_add_op(
         return False, None, ()
 
     if node.target not in [
-        torch.ops.aten.add.Tensor,
-        torch.ops.aten.sub.Tensor,
+        aten.add.Tensor,
+        aten.sub.Tensor,
     ]:
         return False, None, ()
 
-    is_add = node.target == torch.ops.aten.add.Tensor
+    is_add = node.target == aten.add.Tensor
     node0 = get_input_node(node, 0)
     node1 = get_input_node(node, 1)
     return True, node0, (node1, is_add)
@@ -154,12 +160,12 @@ def check_div_or_mul_op(
         return False, None, ()
 
     if node.target not in [
-        torch.ops.aten.div.Tensor,
-        torch.ops.aten.mul.Tensor,
+        aten.div.Tensor,
+        aten.mul.Tensor,
     ]:
         return False, None, ()
 
-    is_div = node.target == torch.ops.aten.div.Tensor
+    is_div = node.target == aten.div.Tensor
     node0 = get_input_node(node, 0)
     node1 = get_input_node(node, 1)
     return True, node0, (node1, is_div)
@@ -168,7 +174,7 @@ def check_div_or_mul_op(
 def check_bmm_op(
     node: fx.Node,
 ) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
-    if not check_op(node, torch.ops.aten.bmm.default):
+    if not check_op(node, aten.bmm.default):
         return False, None, None
 
     arg1 = get_input_node(node, 0)
@@ -179,8 +185,8 @@ def check_bmm_op(
 def check_mm_op(
     node: fx.Node,
 ) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
-    if check_op(node, torch.ops.aten.mm.default) or (
-        check_op(node, torch.ops.aten.matmul.default) and check_meta_2d(node)
+    if check_op(node, aten.mm.default) or (
+        check_op(node, aten.matmul.default) and check_meta_2d(node)
     ):
         arg1 = node.args[0]
         arg2 = node.args[1]
@@ -189,23 +195,23 @@ def check_mm_op(
 
 
 def check_view(node):
-    if (not check_op(node, torch.ops.aten._unsafe_view.default)) and (
-        not check_op(node, torch.ops.aten.view.default)
+    if (not check_op(node, aten._unsafe_view.default)) and (
+        not check_op(node, aten.view.default)
     ):
         return False
     return True
 
 
 def check_softmax_op(node: fx.Node) -> bool:
-    if (not check_op(node, torch.ops.aten._safe_softmax.default)) and (
-        not check_op(node, torch.ops.aten._softmax.default)
+    if (not check_op(node, aten._safe_softmax.default)) and (
+        not check_op(node, aten._softmax.default)
     ):
         return False
     return True
 
 
 def check_cat_op(node: fx.Node):
-    is_cat = check_op(node, torch.ops.aten.cat.default)
+    is_cat = check_op(node, aten.cat.default)
     if is_cat:
         if len(node.args) == 1:
             return True, 0
@@ -216,23 +222,23 @@ def check_cat_op(node: fx.Node):
 
 
 def check_slice_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.slice.Tensor)
+    return check_op(node, aten.slice.Tensor)
 
 
 def check_sum_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.sum.dim_IntList)
+    return check_op(node, aten.sum.dim_IntList)
 
 
 def check_stack_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.stack.default)
+    return check_op(node, aten.stack.default)
 
 
 def check_trans_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.transpose.int)
+    return check_op(node, aten.transpose.int)
 
 
 def check_t_op(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.t.default)
+    return check_op(node, aten.t.default)
 
 
 def check_act_op(
@@ -240,21 +246,21 @@ def check_act_op(
 ) -> Tuple[bool, Union[fx.Node, None], Union[Tuple[Union[fx.Node, None], bool], None]]:
     if not _is_valid_node(node):
         return False, None
-    if node.target == torch.ops.aten.silu.default:
+    if node.target == aten.silu.default:
         return True, "silu"
-    if node.target == torch.ops.aten.gelu.default:
+    if node.target == aten.gelu.default:
         return True, "gelu"
-    if node.target == torch.ops.aten.relu.default:
+    if node.target == aten.relu.default:
         return True, "relu"
     return False, None
 
 
 def check_copy(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten._to_copy.default)
+    return check_op(node, aten._to_copy.default)
 
 
 def check_clone(node: fx.Node) -> bool:
-    return check_op(node, torch.ops.aten.clone.default)
+    return check_op(node, aten.clone.default)
 
 
 def check_getitem_op(node: fx.node) -> bool:
@@ -262,19 +268,19 @@ def check_getitem_op(node: fx.node) -> bool:
 
 
 def check_mask_fill_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.masked_fill.Scalar)
+    return check_op(node, aten.masked_fill.Scalar)
 
 
 def check_eq_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.eq.Scalar)
+    return check_op(node, aten.eq.Scalar)
 
 
 def check_repeat_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.repeat.default)
+    return check_op(node, aten.repeat.default)
 
 
 def check_unsqueeze_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.unsqueeze.default)
+    return check_op(node, aten.unsqueeze.default)
 
 
 def check_norm_op(node: fx.node):
@@ -282,7 +288,7 @@ def check_norm_op(node: fx.node):
         return False, None
     if not (node.op == "call_function" or node.op == "call_module"):
         return False, None
-    if node.target == torch.ops.aten.native_layer_norm.default:
+    if node.target == aten.native_layer_norm.default:
         return True, "layer_norm"
     if node.target == "rms_norm_op":
         return True, "rms_norm"
@@ -292,20 +298,59 @@ def check_norm_op(node: fx.node):
 def check_addmm_op(
     node: fx.Node,
 ) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None], Union[fx.Node, None]]:
-    if not check_op(node, torch.ops.aten.addmm.default):
+    if not check_op(node, aten.addmm.default):
         return False, None, None, None
     arg1 = get_input_node(node, 0)
     arg2 = get_input_node(node, 1)
     arg3 = get_input_node(node, 2)
     return True, arg1, arg2, arg3
 
+
 def check_where_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.where.self)
+    return check_op(node, aten.where.self)
+
 
 def check_zeros_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.zeros.default)
+    return check_op(node, aten.zeros.default)
+
 
 def check_squeeze_op(node: fx.node) -> bool:
-    return check_op(node, torch.ops.aten.squeeze.default) or \
-           check_op(node, torch.ops.aten.squeeze.dim) or \
-           check_op(node, torch.ops.aten.squeeze.dims)
+    return (
+        check_op(node, torch.ops.aten.squeeze.default)
+        or check_op(node, torch.ops.aten.squeeze.dim)
+        or check_op(node, torch.ops.aten.squeeze.dims)
+    )
+
+
+def check_expand_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.expand.default)
+
+
+def check_npu_dtype_cast_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.npu.npu_dtype_cast.default)
+
+
+def check_rsub_scalar_op(node: fx.node) -> bool:
+    return check_op(node, torch.ops.aten.rsub.Scalar)
+
+
+def is_zero_like(node: Any) -> bool:
+    if type(node) in (int, float):
+        return node == 0
+    elif isinstance(node, fx.Node):
+        return node.target in (
+            aten.zeros.default,
+            aten.zeros_like.default,
+        )
+    return False
+
+
+def is_one_like(node: Any) -> bool:
+    if type(node) in (int, float):
+        return node == 1
+    elif isinstance(node, fx.Node):
+        return node.target in (
+            aten.ones.default,
+            aten.ones_like.default,
+        )
+    return False

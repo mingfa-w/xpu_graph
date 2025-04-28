@@ -43,9 +43,9 @@ def validate_slice_operation(n_list):
         slice_axis.append(n.args[1])
         right = n.args[3]
         if right == MAX_INT64:
-            right = slice_input[0].meta["tensor_meta"].shape[-1]
+            right = slice_input[0].meta["val"].shape[-1]
         elif right < 0:
-            right = slice_input[0].meta["tensor_meta"].shape[-1] - (-right)
+            right = slice_input[0].meta["val"].shape[-1] - (-right)
         slice_param.append((n.args[2], right))
     if slice_input.count(slice_input[0]) != len(slice_input):
         return False, None, None
@@ -98,6 +98,7 @@ def match_sub_list(lst):
         else:
             current_len = 0
     return best_start, best_end
+
 
 def fuse_mixed_ops_and_catstack(graph_module: fx.GraphModule):
     changed = False
@@ -164,6 +165,7 @@ def fuse_mixed_ops_and_catstack(graph_module: fx.GraphModule):
 
     return changed
 
+
 class FusedCatSlice(Pattern):
     def __init__(self, target_mod: torch.nn.Module, *super_args):
         super().__init__(*super_args)
@@ -180,8 +182,5 @@ class FusedCatSlice(Pattern):
 
         # slice & cat, the inputs of cat are mixed with slice and other ops.
         changed = changed | fuse_mixed_ops_and_catstack(graph_module)
-
-        graph_module.graph.lint()
-        graph_module.recompile()
 
         return changed

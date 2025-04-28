@@ -19,14 +19,14 @@ class RemoveLayerNormCastForward(AutoMatchPattern):
 
         def _can_remove(pre_cast: fx.Node, post_cast: fx.Node) -> bool:
             inp = pre_cast.args[0]
-            if inp.meta["tensor_meta"].dtype not in (
+            if inp.meta["val"].dtype not in (
                 torch.bfloat16,
                 torch.float16,
             ):
                 return False
             if pre_cast.kwargs["dtype"] != torch.float:
                 return False
-            if post_cast.kwargs["dtype"] != inp.meta["tensor_meta"].dtype:
+            if post_cast.kwargs["dtype"] != inp.meta["val"].dtype:
                 return False
             return True
 
@@ -36,6 +36,4 @@ class RemoveLayerNormCastForward(AutoMatchPattern):
         layernorm.replace_input_with(layernorm.args[0], pre_cast.args[0])
         post_cast.replace_all_uses_with(getitem)
 
-        gm.graph.lint()
-        gm.recompile()
         return True
