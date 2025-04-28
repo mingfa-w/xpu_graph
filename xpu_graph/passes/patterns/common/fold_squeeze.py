@@ -42,8 +42,6 @@ class FoldSqueeze0(Pattern):
                     node.replace_all_uses_with(squeeze)
                     gm.graph.erase_node(node)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed
 
 
@@ -75,6 +73,4 @@ class FoldSqueeze1(Pattern):
                 changed = True
                 node.replace_all_uses_with(unsqueeze.args[0])
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

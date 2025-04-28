@@ -29,6 +29,4 @@ class FoldSlice(Pattern):
                 gm.graph.erase_node(node)
                 changed = True
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

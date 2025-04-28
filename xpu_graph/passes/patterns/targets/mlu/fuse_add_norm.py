@@ -14,6 +14,7 @@ from ...utils.check_ops import (
     check_getitem_op,
 )
 
+
 class FusedNormReplacement(nn.Module):
     def forward(
         self,
@@ -27,6 +28,7 @@ class FusedNormReplacement(nn.Module):
         norm_type,
     ):
         import torch_mlu_ops
+
         if bias is None:
             bias = torch.zeros_like(weight)
         dtype = torch.promote_types(input.dtype, residual.dtype)
@@ -190,9 +192,8 @@ class FusedAddLayerNorm(Pattern):
                 node_replacement(node, graph_module, "layer_norm", params)
                 is_modified = True
 
-        graph_module.graph.lint()
-        graph_module.recompile()
         return is_modified
+
 
 class FusedAddRMSNorm(Pattern):
     _opt_level = OptLevel.level2
@@ -210,6 +211,4 @@ class FusedAddRMSNorm(Pattern):
                 node_replacement(node, graph_module, "rms_norm", params)
                 is_modified = True
 
-        graph_module.graph.lint()
-        graph_module.recompile()
         return is_modified

@@ -17,9 +17,6 @@ class FoldStack(Pattern):
         copy = gm.graph.call_function(
             torch.ops.aten._to_copy.default,
             args=(src,),
-            kwargs={
-                "memory_format": torch.contiguous_format,
-            },
         )
         view = gm.graph.call_function(
             torch.ops.aten.unsqueeze.default, args=(copy, dim)
@@ -46,6 +43,4 @@ class FoldStack(Pattern):
                     stack.replace_all_uses_with(fold_res)
                     gm.graph.erase_node(stack)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

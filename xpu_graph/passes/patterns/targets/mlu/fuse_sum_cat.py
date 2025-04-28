@@ -233,11 +233,11 @@ def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, cat_axis):
     if len(source_nodes) < 3:
         return False, None
 
-    batch_sizes = [n.meta["tensor_meta"].shape[0] for n in source_nodes]
+    batch_sizes = [n.meta["val"].shape[0] for n in source_nodes]
     if not all(size == batch_sizes[0] for size in batch_sizes):
         return False, None
 
-    tensor_shapes = [n.meta["tensor_meta"].shape for n in source_nodes]
+    tensor_shapes = [n.meta["val"].shape for n in source_nodes]
     dims = [len(shape) for shape in tensor_shapes]
 
     if not all(dim == dims[0] for dim in dims) or not 1 < dims[0] <= 3:
@@ -309,7 +309,7 @@ def process_match_sum_cat(gm: fx.GraphModule):
             if is_cat:
                 if node.meta == {}:
                     continue
-                if len(node.meta["tensor_meta"].shape) - 1 == cat_axis:
+                if len(node.meta["val"].shape) - 1 == cat_axis:
                     cat_axis = -1
             if len(node.args[0]) > 2:
                 n_list = []
@@ -385,6 +385,4 @@ class FusedCatSum(Pattern):
 
         changed = changed | process_match_sum_cat(gm)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

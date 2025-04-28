@@ -34,7 +34,7 @@ def cat_test(xpu_graph, func):
     assert is_similar(expect, res)
 
 
-class TestCat:
+class TestFoldCat:
     def setup_class(self):
         config = xpu_graph.config.XpuGraphConfig(is_training=False)
         self.xpu_graph = xpu_graph.compiler.XpuGraph(config)

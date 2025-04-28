@@ -21,17 +21,16 @@ class ChangeTensorLike(Pattern):
         ]
 
         for like in candidates:
-            inp = like.args[0]
-            if any([isinstance(s, SymInt) for s in like.meta["tensor_meta"].shape]):
+            if any([isinstance(s, SymInt) for s in like.meta["val"].shape]):
                 # FIXME: use shape env to get the real shape
                 continue
             changed = True
             with gm.graph.inserting_before(like):
                 tensor = gm.graph.call_function(
                     tensor_like_map[like.target],
-                    args=(list(like.meta["tensor_meta"].shape),),
+                    args=(list(like.meta["val"].shape),),
                     kwargs={
-                        "dtype": like.meta["tensor_meta"].dtype,
+                        "dtype": like.meta["val"].dtype,
                         "device": like.meta["val"].device,
                         "pin_memory": like.kwargs["pin_memory"],
                     },
@@ -39,6 +38,4 @@ class ChangeTensorLike(Pattern):
             like.replace_all_uses_with(tensor)
             gm.graph.erase_node(like)
 
-        gm.graph.lint()
-        gm.recompile()
         return changed

@@ -17,9 +17,9 @@ def get_binary_fold_result(
     if type(inp) in scalar_tup:
         return gm.graph.call_function(
             torch.ops.aten.full.default,
-            args=(target_meta["tensor_meta"].shape, inp),
+            args=(target_meta["val"].shape, inp),
             kwargs={
-                "dtype": target_meta["tensor_meta"].dtype,
+                "dtype": target_meta["val"].dtype,
                 "device": target_meta["val"].device,
             },
         )
@@ -28,14 +28,11 @@ def get_binary_fold_result(
             torch.ops.aten.expand.default,
             args=(
                 inp,
-                target_meta["tensor_meta"].shape,
+                target_meta["val"].shape,
             ),
         )
         copy = gm.graph.call_function(
             torch.ops.aten._to_copy.default,
             args=(expand,),
-            kwargs={
-                "memory_format": torch.contiguous_format,
-            },
         )
         return copy

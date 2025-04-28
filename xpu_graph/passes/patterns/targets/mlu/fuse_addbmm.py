@@ -18,6 +18,7 @@ from ...utils.check_ops import (
     get_dtype,
 )
 
+
 class FusedBAddBMMReplacement(nn.Module):
     def forward(self, input1, input2, bias, bmm_shape, output_shape, output_dtype):
         if len(bmm_shape) == 4:
@@ -151,8 +152,6 @@ class FusedBMM(Pattern):
             if is_match:
                 replace_node(graph_module, bmm_node, node, "fused_bmm")
 
-        graph_module.graph.lint()
-        graph_module.recompile()
         return is_modified
 
 
@@ -187,6 +186,4 @@ class FusedBaddBMM(Pattern):
             if is_match:
                 replace_node(graph_module, bmm_node, node, "fused_baddbmm")
 
-        graph_module.graph.lint()
-        graph_module.recompile()
         return is_modified

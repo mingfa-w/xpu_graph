@@ -117,6 +117,4 @@ class FusedLinearAttention(Pattern):
             node.replace_all_uses_with(fused)
             modified = True
 
-        graph_module.graph.lint()
-        graph_module.recompile()
         return modified
