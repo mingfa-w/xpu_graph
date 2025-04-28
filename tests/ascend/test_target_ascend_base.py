@@ -36,7 +36,7 @@ class TestGeAndAclGraphMode:
         assert self.acl_graph_func is not None
 
 
-    # WARNING(liuyuan): GE and acl_graph does not support variable and dynamic shape.
+    # WARNING(liuyuan): ACL Graph does not support variable and dynamic shape.
     @pytest.mark.parametrize("shape", [(32,)])
     def testInference(self, shape):
         input = torch.randn((*shape, 4)).npu()

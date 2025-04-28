@@ -11,6 +11,10 @@ def ascend_compile(module: torch.nn.Module, example_inputs, config_dict, **kwarg
     config = CompilerConfig()
     if config_dict.get("mode", None) == "reduce-overhead":
         config.mode = config_dict["mode"]
+        from torch import SymInt
+        for ele in example_inputs:
+            if isinstance(ele, SymInt):
+                raise TypeError("ACL Graph does not support dynamic shape!!")
     else:
         """
         TODO(zhangjihang): We have to use this, cause some case we have to use GE
