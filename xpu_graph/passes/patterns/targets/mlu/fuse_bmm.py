@@ -29,11 +29,10 @@ class BMMParam:
         self.bias: Optional[NodeType] = None
         self.output_dtype: Optional[torch.dtype] = None
         self.act: str = "none"
-        self.shape_param: Optional[Tuple[int, ...]] = None
         self.node_name: list = []
 
     def set_node(self, node):
-        if len(node.args) != 11:
+        if len(node.args) != 10:
             return False
         self.input = node.args[0]
         self.input_shape = node.args[1]
@@ -45,7 +44,6 @@ class BMMParam:
         self.bias = node.args[7]
         self.output_dtype = node.args[8]
         self.act = node.args[9]
-        self.shape_param = node.args[10]
         return True
 
     def set_input(self, node):
@@ -92,27 +90,32 @@ class BMMParam:
             return True
         return False
 
-    def set_shape_param(self, shape_param):
-        n = self.weight_shape[1] if self.trans_b == False else self.weight_shape[0]
-        if len(shape_param) == 3:
-            if self.input_shape[0] == shape_param[0] and \
-               n == shape_param[2]:
-                self.shape_param = None
-                return True
-        self.shape_param = shape_param
-        return True
-
 
 class FusedBMMReplacement(nn.Module):
     def forward(
-        self, inputs, input_shape, weight, weight_shape, trans_b, residual, beta, bias, dtype, act, shape_param
+        self,
+        inputs,
+        input_shape,
+        weight,
+        weight_shape,
+        trans_b,
+        residual,
+        beta,
+        bias,
+        dtype,
+        act,
     ):
         import torch_mlu_ops
+
         if not inputs.is_contiguous():
             inputs = inputs.contiguous()
         if not weight.is_contiguous():
             weight = weight.contiguous()
 
+        # TODO(jyj): waiting for tmo version update
+        tmp_act = act
+        if act == "sigmoid":
+            tmp_act = "none"
         output = torch_mlu_ops.batch_matmul(
             inputs,
             weight,
@@ -125,11 +128,11 @@ class FusedBMMReplacement(nn.Module):
             trans_b,
             None,
             bias,
-            act,
+            tmp_act,
             dtype,
         )
-        if shape_param:
-            output = output.view(shape_param)
+        if act == "sigmoid":
+            return torch.sigmoid(output)
         return output
 
 
@@ -162,7 +165,6 @@ def replace_node(graph_module, node, bmm_param, func_name):
                 bmm_param.bias,
                 bmm_param.output_dtype,
                 bmm_param.act,
-                bmm_param.shape_param,
             ),
         )
     node.replace_all_uses_with(new_node)
@@ -171,25 +173,50 @@ def replace_node(graph_module, node, bmm_param, func_name):
 
 
 def match_bmm(graph_module):
-    graph_module.add_submodule(
-        "mlu_tmo_fused_bmm_replacement", FusedBMMReplacement()
-    )
     changed = False
     for node in reversed(graph_module.graph.nodes):
         is_match, bmm_param = _is_bmm(node)
         if is_match:
             new_node = replace_node(
-                    graph_module, node, bmm_param, "mlu_tmo_fused_bmm_replacement"
+                graph_module, node, bmm_param, "mlu_tmo_fused_bmm_replacement"
             )
             changed = True
     return changed
 
 
+def swap_view_between(graph_module, func1, func2):
+    for node in reversed(graph_module.graph.nodes):
+        if not func1(node):
+            continue
+        view_node = node.args[0]
+        if not check_view(view_node):
+            continue
+        mm_node = view_node.args[0]
+        if not func2(mm_node):
+            continue
+        if len(mm_node.users) != 1:
+            continue
+        if len(view_node.users) != 1:
+            continue
+
+        with graph_module.graph.inserting_before(view_node):
+            new_node = graph_module.graph.call_function(
+                node.target,
+                args=(mm_node,),
+                kwargs=node.kwargs,
+            )
+        view_node.args = (new_node,) + view_node.args[1:]
+        node.replace_all_uses_with(view_node)
+        graph_module.graph.erase_node(node)
+
+
 def match_bmm_add(graph_module):
-    graph_module.add_submodule(
-        "mlu_tmo_fused_bmm_add_replacement", FusedBMMReplacement()
-    )
     changed = False
+    swap_view_between(
+        graph_module,
+        check_add_op,
+        lambda a: a.target != "mlu_tmo_fused_bmm_replacement",
+    )
     for node in reversed(graph_module.graph.nodes):
         if not check_add_op(node):
             continue
@@ -216,16 +243,19 @@ def match_bmm_add(graph_module):
         changed = True
     return changed
 
+
 def match_bmm_act(graph_module):
-    # bmm+act
-    graph_module.add_submodule(
-        "mlu_tmo_fused_bmm_act_replacement", FusedBMMReplacement()
-    )
-    # bmm+bias+act
-    graph_module.add_submodule(
-        "mlu_tmo_fused_bmm_add_act_replacement", FusedBMMReplacement()
-    )
     changed = False
+    swap_view_between(
+        graph_module,
+        lambda a: check_act_op(a)[0],
+        lambda a: a.target != "mlu_tmo_fused_bmm_replacement",
+    )
+    swap_view_between(
+        graph_module,
+        lambda a: check_act_op(a)[0],
+        lambda a: a.target != "mlu_tmo_fused_bmm_add_replacement",
+    )
     for node in reversed(graph_module.graph.nodes):
         is_act, act_str = check_act_op(node)
         if not is_act:
@@ -256,47 +286,44 @@ def match_bmm_act(graph_module):
         changed = True
     return changed
 
-def match_bmm_view(graph_module, target_str):
-    changed = False
-    for node in reversed(graph_module.graph.nodes):
-        if not check_view(node):
-            continue
-        bmm_node = node.args[0]
-        if bmm_node.target != target_str:
-            continue
-        if len(bmm_node.users) != 1:
-            continue
-        bmm_param = BMMParam()
-        if not bmm_param.set_node(bmm_node):
-            logger.info(f"BMM Pass: invalid pattern in match_bmm_view: {bmm_node.name}")
-            continue
-        if not bmm_param.set_shape_param(node.args[1]):
-            continue
-        new_node = replace_node(graph_module, node, bmm_param, bmm_node.target)
-        assert new_node.args[0] == bmm_param.input
-        graph_module.graph.erase_node(bmm_node)
-        changed = True
-    return changed
 
 class FusedBMM(Pattern):
     _opt_level = OptLevel.level2
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
+        graph_module.add_submodule(
+            "mlu_tmo_fused_bmm_replacement", FusedBMMReplacement()
+        )
         is_modified |= match_bmm(graph_module)
-        is_modified |= match_bmm_view(graph_module, "mlu_tmo_fused_bmm_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
+        return is_modified
 
+
+class FusedBMMAdd(Pattern):
+    _opt_level = OptLevel.level2
+
+    def process(self, graph_module: fx.GraphModule) -> bool:
+        is_modified = False
+        graph_module.add_submodule(
+            "mlu_tmo_fused_bmm_add_replacement", FusedBMMReplacement()
+        )
         is_modified |= match_bmm_add(graph_module)
-        is_modified |= match_bmm_view(graph_module, "mlu_tmo_fused_bmm_add_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
+        return is_modified
 
+
+class FusedBMMAct(Pattern):
+    _opt_level = OptLevel.level2
+
+    def process(self, graph_module: fx.GraphModule) -> bool:
+        is_modified = False
+        # bmm+act
+        graph_module.add_submodule(
+            "mlu_tmo_fused_bmm_act_replacement", FusedBMMReplacement()
+        )
+        # bmm+bias+act
+        graph_module.add_submodule(
+            "mlu_tmo_fused_bmm_add_act_replacement", FusedBMMReplacement()
+        )
         is_modified |= match_bmm_act(graph_module)
-        is_modified |= match_bmm_view(graph_module, "mlu_tmo_fused_bmm_act_replacement")
-        is_modified |= match_bmm_view(graph_module, "mlu_tmo_fused_bmm_add_act_replacement")
-        graph_module.graph.lint()
-        graph_module.recompile()
 
         return is_modified

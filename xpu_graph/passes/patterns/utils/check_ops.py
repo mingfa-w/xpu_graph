@@ -252,6 +252,8 @@ def check_act_op(
         return True, "gelu"
     if node.target == aten.relu.default:
         return True, "relu"
+    if node.target == aten.sigmoid.default:
+        return True, "sigmoid"
     return False, None
 
 
