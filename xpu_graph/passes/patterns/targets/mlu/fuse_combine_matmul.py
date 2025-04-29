@@ -102,7 +102,7 @@ def get_node_desc(node):
         # fused_tmo_xxx
         weight = node.args[2]
         bias = node.args[5]
-        act = node.args[7]
+        act = node.args[6]
         # TODO(JYJ):Remove restrictions
         trans_b = node.args[4]
         if trans_b == True:
@@ -119,13 +119,13 @@ def get_node_desc(node):
     return mm_desc
 
 
-class FusedCombineBmmInp1(nn.Module):
-    def forward(self, input, weight_list, bias_list, act: str):
+class FusedCombineBmm(nn.Module):
+    def forward(self, input_list, weight_list, bias_list, act: str):
         """
         Fuses multiple batched matrix multiplications with optional bias addition and activation.
 
         Args:
-            input (Tensor): Input tensor of shape [B, M] or [T, B, M].
+            input_list (Tensor): List of input tensor.
             weight_list (List[Tensor]): List of weight matrices.
             bias_list (List[Tensor or scalar]): List of biases corresponding to each weight.
             act (str): Activation function to apply ('relu', 'gelu', 'silu', or 'none').
@@ -133,7 +133,11 @@ class FusedCombineBmmInp1(nn.Module):
         Returns:
             Tensor: Output tensor after batched mm/addmm and optional activation.
         """
-        # Handle bias batch
+        weight_batch = torch.stack(weight_list, dim=0) 
+        #import pdb;pdb.set_trace()
+        #print(weight_batch)
+        B, K, N = weight_batch.shape
+
         bias = bias_list[0]
         if bias is None:
             bias_batch = None
@@ -143,37 +147,32 @@ class FusedCombineBmmInp1(nn.Module):
                 bias_list, dim=0
             )  # Stack all biases along a new dimension
 
-        # Case 1: input shape [B, M] and weight shape [B, K]
-        if len(weight_list[0].shape) == 2 and len(input.shape) == 2:
-            weight_batch = torch.stack(weight_list, dim=0)  # [B, K, N]
-            B, K, N = weight_batch.shape
-
-            output = torch.bmm(
-                input.unsqueeze(0).expand(
+        if len(input_list) == 1:
+            input = input_list[0]
+            input_batch = input.unsqueeze(0).expand(
                     B, input.shape[0], input.shape[1]
-                ),  # [B, M] -> [B, B, M]
-                weight_batch,  # [B, K, N]
+                )
+        else:
+            input_batch = torch.stack(
+                input_list, dim=0
             )
 
-        # Case 2: input shape [T, B, M] and weight shape [T, B, K]
-        elif len(weight_list[0].shape) == 3 and len(input.shape) == 3:
-            weight_batch = torch.stack(weight_list, dim=0)  # [T, B, K, N]
-            T, B, K, N = weight_batch.shape
-            _, M, _ = input.shape
+        #import pdb;pdb.set_trace()
+        output = torch.bmm(
+            input_batch, weight_batch,  # [B, M, N]
+        )
 
-            input_ = (
-                input.unsqueeze(0).expand(T, B, M, K).reshape(-1, M, K)
-            )  # [T, B, M] -> [T*B, M, K]
-            output = torch.bmm(input_, weight_batch.view(-1, K, N)).view(  # [T*B, K, N]
-                T, B, M, N
-            )  # [T, B, M, N]
 
+        '''
         # Fallback case: ordinary matmul + bias for each pair
         else:
+            if len(input_list) == 1:
+                input_list = input_list * len(weight_list)
             output = [
                 torch.matmul(input, weight) + bias
-                for weight, bias in zip(weight_list, bias_list)
+                for input, weight, bias in zip(input_list, weight_list, bias_list)
             ]
+        '''
 
         # Add bias batch if available
         if bias_batch is not None:
@@ -187,29 +186,58 @@ class FusedCombineBmmInp1(nn.Module):
         elif act == "silu":
             output = torch.silu(output)
 
+        '''
+        # Case 2: input shape [T, B, M] and weight shape [T, B, K]
+        elif len(weight_list[0].shape) == 3 and len(input.shape) == 3:
+            weight_batch = torch.stack(weight_list, dim=0)  # [T, B, K, N]
+            T, B, K, N = weight_batch.shape
+            _, M, _ = input.shape
+
+            input_ = (
+                input.unsqueeze(0).expand(T, B, M, K).reshape(-1, M, K)
+            )  # [T, B, M] -> [T*B, M, K]
+            output = torch.bmm(input_, weight_batch.view(-1, K, N)).view(  # [T*B, K, N]
+                T, B, M, N
+            )  # [T, B, M, N]
+        '''
         return output
 
 
-def replace_node_inp1(graph_module, nodes):
-    input_node = nodes[0].input
+def find_last_node_in_list(gm: fx.GraphModule, node_list: list[fx.Node]) -> fx.Node:
+    """
+    Given a list of nodes, find the one that appears last in the graph's topological order.
+    """
+    node_set = set(node_list)  # Faster lookup
+    last_node = None
+
+    for node in gm.graph.nodes:
+        if node in node_set:
+            last_node = node  # Update when we see a matching node
+
+    return last_node
+
+def replace_node(graph_module, nodes, same_input):
+    if same_input:
+        new_input = [nodes[0].input]
+    else:
+        new_input = [n.input for n in nodes]
     new_weight = [n.weight for n in nodes]
     new_bias = [n.bias for n in nodes]
     act = nodes[0].act
 
     if len(new_weight) < COMBINE_LEN:
         return
-    with graph_module.graph.inserting_before(nodes[0].node):
+    with graph_module.graph.inserting_after(find_last_node_in_list(graph_module, new_input)):
         new_node = graph_module.graph.call_module(
-            "fused_combine_bmm_inp1",
-            args=(input_node, new_weight, new_bias, act),
+            "fused_combine_bmm",
+            args=(new_input, new_weight, new_bias, act),
         )
-    for idx, n in enumerate(nodes):
-        with graph_module.graph.inserting_after(n.node):
+    with graph_module.graph.inserting_after(new_node):
+        for idx, n in enumerate(nodes):
             new_n = graph_module.graph.call_function(
                 operator.getitem, args=(new_node, idx)
             )
             n.node.replace_all_uses_with(new_n)
-
 
 def split_inp1(graph_module, nodes):
     if len(nodes) <= COMBINE_LEN:
@@ -226,7 +254,39 @@ def split_inp1(graph_module, nodes):
     for key, nodes in input_dict.items():
         if len(nodes) < COMBINE_LEN:
             continue
-        replace_node_inp1(graph_module, nodes)
+        replace_node(graph_module, nodes, True)
+        replaced_nodes += nodes
+    return replaced_nodes
+
+def get_real_input(node):
+    while True:
+        if node.op == "placeholder":
+            break
+        elif node.target in [operator.getitem, torch.ops.aten.view.default, torch.ops.aten.squeeze.dim]:
+            node = node.args[0]
+        else:
+            break
+    return node
+
+def split_inp_getitem(graph_module, nodes):
+    if len(nodes) <= COMBINE_LEN:
+        return []
+    input_dict = {}
+    for n in nodes:
+        input_ = n.input
+        src_node = get_real_input(input_) 
+        input_shape = get_shape(input_)
+        key = (src_node, input_shape)
+        if key not in input_dict:
+            input_dict[key] = [n]
+        else:
+            input_dict[key].append(n)
+
+    replaced_nodes = []
+    for key, nodes in input_dict.items():
+        if len(nodes) < COMBINE_LEN:
+            continue
+        replace_node(graph_module, nodes, False)
         replaced_nodes += nodes
     return replaced_nodes
 
@@ -253,8 +313,11 @@ def combine_matmul(graph_module, candidates):
         if len(replaced_nodes) > 0:
             changed = True
             nodes = [x for x in nodes if x not in replaced_nodes]
-
         # b. split/slice
+        replaced_nodes = split_inp_getitem(graph_module, nodes)
+        if len(replaced_nodes) > 0:
+            changed = True
+            nodes = [x for x in nodes if x not in replaced_nodes]
         # c. TBD
     return changed
 
@@ -266,8 +329,9 @@ class FusedCombineMatMul(Pattern):
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
 
-        graph_module.add_submodule("fused_combine_bmm_inp1", FusedCombineBmmInp1())
-
+        graph_module.add_submodule("fused_combine_bmm", FusedCombineBmm())
+        #print("before")
+        #print(graph_module.graph)
         target_module = [
             torch.ops.aten.mm.default,
             torch.ops.aten.addmm.default,
@@ -288,6 +352,8 @@ class FusedCombineMatMul(Pattern):
             changed = changed | combine_matmul(graph_module, candidates)
             graph_module.graph.lint()
             graph_module.recompile()
-        print(graph_module.graph)
+        if changed:
+            print("after")
+            print(graph_module.graph)
 
         return changed

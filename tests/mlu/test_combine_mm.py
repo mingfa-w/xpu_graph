@@ -14,6 +14,7 @@ data_type = torch.float32
 
 
 def fn0(inputs, weight_list, bias_list):
+    inputs = inputs.squeeze(0)
     outputs_original = []
     for weight in weight_list:
         outputs_original.append(inputs @ weight)
@@ -21,6 +22,7 @@ def fn0(inputs, weight_list, bias_list):
 
 
 def fn1(inputs, weight_list, bias_list):
+    inputs = inputs.squeeze(0)
     outputs_original = []
     for weight in weight_list:
         outputs_original.append(torch.bmm(inputs, weight))
@@ -28,6 +30,7 @@ def fn1(inputs, weight_list, bias_list):
 
 
 def fn2(inputs, weight_list, bias_list):
+    inputs = inputs.squeeze(0)
     outputs_original = []
     for weight, bias in zip(weight_list, bias_list):
         outputs_original.append(inputs @ weight + bias)
@@ -35,29 +38,39 @@ def fn2(inputs, weight_list, bias_list):
 
 
 def fn3(inputs, weight_list, bias_list):
+    inputs = inputs.squeeze(0)
     outputs_original = []
     for weight, bias in zip(weight_list, bias_list):
         outputs_original.append(inputs @ weight + bias)
     return outputs_original
 
 def fn4(inputs, weight_list, bias_list):
+    inputs = inputs.squeeze(0)
     outputs_original = []
     for weight, bias in zip(weight_list, bias_list):
         outputs_original.append(inputs @ weight + bias)
     return outputs_original
 
 def fn5(inputs, weight_list, bias_list):
+    inputs = inputs.squeeze(0)
     outputs_original = []
     for weight, bias in zip(weight_list, bias_list):
         outputs_original.append(torch.relu(inputs @ weight + bias))
     return outputs_original
 
+def fn6(inputs, weight_list, bias_list):
+    input_list = inputs.split(inputs.shape[0]//len(weight_list), dim=0)
+    input_list = [i.squeeze(0) for i in input_list]
+    outputs_original = []
+    for input, weight in zip(input_list, weight_list):
+        outputs_original.append(torch.relu(input @ weight))
+    return outputs_original
 
 def combine_matmul_test(xpu_graph_backend, func):
     T = 8
     if func in [fn0, fn2, fn4, fn5]:
         M, N, K = 5, 8, 7
-        inputs = torch.randn((M, N), device=device, dtype=data_type)
+        inputs = torch.randn((1, M, N), device=device, dtype=data_type)
         weight_list = [
             torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)
         ]
@@ -79,6 +92,13 @@ def combine_matmul_test(xpu_graph_backend, func):
         bias_list = [
             torch.randn((M, K), device=device, dtype=data_type) for _ in range(T)
         ]
+    if func == fn6:
+        M, N, K = 5, 8, 7
+        inputs = torch.randn((T, M, N), device=device, dtype=data_type)
+        weight_list = [
+            torch.randn((N, K), device=device, dtype=data_type) for _ in range(T)
+        ]
+        bias_list = None
     res = func(inputs, weight_list, bias_list)
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res1 = compiled(inputs, weight_list, bias_list)
@@ -105,6 +125,7 @@ class TestCombineMatMul:
             fn2,
             fn4,
             fn5,
+            fn6,
         ],
     )
     def test_matmul_patterns(self, caplog, pattern_func):
@@ -115,10 +136,11 @@ class TestCombineMatMul:
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, opt_level=OptLevel.level2, debug=True
+        is_training=False, opt_level=OptLevel.level2, debug=True, enable_cache=False
     )
     # combine_matmul_test(xpu_graph_backend, fn0)
     # combine_matmul_test(xpu_graph_backend, fn1)
     # combine_matmul_test(xpu_graph_backend, fn2)
-    combine_matmul_test(xpu_graph_backend, fn4)
+    # combine_matmul_test(xpu_graph_backend, fn4)
     #combine_matmul_test(xpu_graph_backend, fn4)
+    combine_matmul_test(xpu_graph_backend, fn6)
