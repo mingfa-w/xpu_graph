@@ -119,6 +119,7 @@ class FusedLayernormMM(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
+        return False
         graph_module.add_submodule(
             "mlu_tmo_fused_norm_mm_replacement", FusedLayernormMMReplacement()
         )
