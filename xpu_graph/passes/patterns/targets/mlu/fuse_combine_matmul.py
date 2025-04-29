@@ -335,10 +335,10 @@ class FusedCombineMatMul(Pattern):
         target_module = [
             torch.ops.aten.mm.default,
             torch.ops.aten.addmm.default,
-            "mlu_tmo_fused_matmul_1_replacement",
-            "mlu_tmo_fused_matmul_2_replacement",
-            "mlu_tmo_fused_matmul_3_replacement",
-            "mlu_tmo_fused_matmul_4_replacement",
+            "mlu_tmo_fused_matmul_replacement",
+            "mlu_tmo_fused_matmul_add_replacement",
+            "mlu_tmo_fused_matmul_act_replacement",
+            "mlu_tmo_fused_matmul_add_act_replacement",
         ]
         for module in target_module:
             candidates = [
