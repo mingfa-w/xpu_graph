@@ -84,7 +84,7 @@ class XpuGraph:
 
         self._set_context()
 
-    def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
+    def __call__(self, dynamo_gm: torch.fx.GraphModule, example_inputs, *, graph_only=False):
         def _compiler(gm, fake_inputs, stage: FxStage):
 
             nodes_statistics = NodesStatistics()
@@ -123,6 +123,9 @@ class XpuGraph:
                     )
 
                 logger.info(f"node statistic: {str(nodes_statistics)}")
+
+                if graph_only:
+                    return xpu_compiled
 
                 if stage != FxStage.pregrad and self._config.vendor_compiler_config:
                     xpu_compiled = decompose_for_inductor(xpu_compiled, fake_inputs)
@@ -189,6 +192,31 @@ class XpuGraph:
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 
         return xpu_gm
+
+    def aot_export(self, mod: torch.nn.Module, example_args, example_kwargs=None, *, package_path=None, **kwargs):
+        if not torch.__version__.startswith("2.6"):
+            logger.error("AOT export functionality is only available on torch 2.6 for now")
+            raise NotImplemented
+        if self._config.is_training:
+            logger.error("AOT export functionality is only available for inference")
+            raise NotImplemented
+
+        example_kwargs = example_kwargs or {}
+
+        logger.info("export module start...")
+        exported_prog = torch.export.export(mod, example_args, example_kwargs)
+        logger.info("export module complete")
+
+        flat_inputs = exported_prog._graph_module_flat_inputs(*exported_prog.example_inputs)
+        optimized_gm = self.__call__(exported_prog._graph_module, flat_inputs, graph_only=True)
+        exported_prog._graph_module = optimized_gm
+
+        logger.info("aot_inductor start...")
+        logger.warning("AOT export ignores vendor_compiler configs, use default aot_inductor settings")
+        dump_path = torch._inductor.aoti_compile_and_package(exported_prog, package_path=package_path)
+        logger.info("aot_inductor complete")
+        logger.info(f"after aot_inductor, saving optimized module to {dump_path}")
+        return dump_path
 
     def get_pattern_manager(self):
         return self._pass_manager.get_pattern_manager()
