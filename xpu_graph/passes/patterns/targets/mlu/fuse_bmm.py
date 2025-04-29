@@ -113,6 +113,10 @@ class FusedBMMReplacement(nn.Module):
         if not weight.is_contiguous():
             weight = weight.contiguous()
 
+        #TODO(jyj): waiting for tmo version update
+        tmp_act = act
+        if act == "sigmoid":
+            tmp_act = "none"
         output = torch_mlu_ops.batch_matmul(
             inputs,
             weight,
@@ -125,11 +129,13 @@ class FusedBMMReplacement(nn.Module):
             trans_b,
             None,
             bias,
-            act,
+            tmp_act,
             dtype,
         )
         if shape_param:
             output = output.view(shape_param)
+        if act == "sigmoid":
+            return torch.sigmoid(output)
         return output
 
 
