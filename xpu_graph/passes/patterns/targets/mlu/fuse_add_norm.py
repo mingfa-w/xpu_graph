@@ -10,8 +10,8 @@ from xpu_graph.utils import logger
 from ...utils.check_ops import (
     check_add_op,
     check_norm_op,
-    check_view,
     check_getitem_op,
+    get_shape
 )
 
 
@@ -108,6 +108,9 @@ def _is_add_norm(node: fx.Node, match_str: str):
 
     inputs = add_node.args[0]
     residual = add_node.args[1]
+
+    if get_shape(inputs) != get_shape(residual):
+        return False, ()
 
     store_output_before_norm = False
 
