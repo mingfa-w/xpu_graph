@@ -2,7 +2,7 @@ import copy
 import hashlib
 import os
 import pickle
-from typing import Union
+from typing import Union, Optional
 from os import PathLike
 import torch
 from torch._dynamo.convert_frame import compile_lock
@@ -15,7 +15,12 @@ if torch_version.startswith("2.6"):
     from torch._inductor.compile_fx import CompiledFxGraph
     from torch._inductor.codecache import PyCodeCache, get_path, FxGraphCache
 else:
-    from torch._inductor.codecache import CompiledFxGraph, PyCodeCache, get_path, FxGraphCache
+    from torch._inductor.codecache import (
+        CompiledFxGraph,
+        PyCodeCache,
+        get_path,
+        FxGraphCache,
+    )
 from torch.fx import GraphModule, Graph, Node
 from torch.fx.node import map_aggregate
 from torch.utils._python_dispatch import _disable_current_modes
@@ -77,10 +82,11 @@ class SerializeWrapper(torch.nn.Module):
             mod.current_callable = None
             return (CompiledFxGraph, (mod,))
         elif isinstance(object, GraphModule):
-            if len(object._modules) > 0:
-                raise NotImplemented("Only fully-inlined graph module is supported")
             gm_dict = object.__dict__.copy()
             del gm_dict["_graph"]
+            for k, v in gm_dict["_modules"].items():
+                if isinstance(v, GraphModule):
+                    gm_dict["_modules"][k] = SerializeWrapper(v)
             graph = object.graph
             graph_meta = (graph._tracer_cls, graph._tracer_extras)
             nodes = list(graph.nodes)
@@ -130,12 +136,15 @@ class SerializeWrapper(torch.nn.Module):
             #   2. Example_inputs in post_compile actually leads to symint guards,
             #      but we choose to not produce extra guards
             if torch_version.startswith("2.5"):
-	            FxGraphCache.post_compile(
-		        compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs)
-		    )
+                FxGraphCache.post_compile(
+                    compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs)
+                )
             return SerializeWrapper(compiled_fn)
         elif cls == GraphModule:
             gm_dict, graph_meta, nodes_meta = arg_tuple
+            for k, v in gm_dict["_modules"].items():
+                if isinstance(v, SerializeWrapper):
+                    gm_dict["_modules"][k] = v.wrapped_fn
             gm = GraphModule.__new__(GraphModule)
             gm.__dict__ = gm_dict
 
@@ -151,7 +160,9 @@ class SerializeWrapper(torch.nn.Module):
                     return arg
 
             for node_meta in nodes_meta:
-                node_name, node_type, node_op, node_target, node_args, node_kwargs = node_meta
+                node_name, node_type, node_op, node_target, node_args, node_kwargs = (
+                    node_meta
+                )
 
                 if node_op == "call_function":
                     node_target = _get_target_function(node_target)
@@ -184,11 +195,11 @@ class XpuGraphCache:
         logger.info(f"Cache Key: {hashkey}")
         return hashkey
 
-    def save_gm(self, key, value: torch.fx.GraphModule, expire=None) -> torch.fx.GraphModule:
+    def save_gm(self, key, value: SerializeWrapper, expire=None) -> SerializeWrapper:
         # Note: since GraphModules ser/des may do canonicalization, so the cached version should be returned
         return value
 
-    def load_gm(self, key):
+    def load_gm(self, key) -> Optional[SerializeWrapper]:
         return None
 
     def delete_gm(self, key):
@@ -208,7 +219,7 @@ class XpuGraphLocalCache(XpuGraphCache):
         os.makedirs(cache_path, exist_ok=True)
         self._path = cache_path
 
-    def save_gm(self, key, value: torch.fx.GraphModule, expire=None) -> torch.fx.GraphModule:
+    def save_gm(self, key, value: SerializeWrapper, expire=None) -> SerializeWrapper:
         artifact_path = self._graph_path(key)
         logger.info(f"Save cache in location: {artifact_path}")
         with compile_lock, _disable_current_modes():
@@ -218,7 +229,7 @@ class XpuGraphLocalCache(XpuGraphCache):
                 cached_graph = pickle.load(f)
         return cached_graph
 
-    def load_gm(self, key):
+    def load_gm(self, key) -> Optional[SerializeWrapper]:
         artifact_path = self._graph_path(key)
         if os.path.isfile(artifact_path):
             with compile_lock, _disable_current_modes():
