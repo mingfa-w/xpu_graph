@@ -15,6 +15,7 @@ from ...utils.check_ops import (
     get_shape,
     check_div_or_mul_op,
     check_sub_or_add_op,
+    check_view,
 )
 
 
@@ -184,7 +185,7 @@ def validate_transpose_operation(key_transpose):
 
 
 def _is_fa(node: fx.Node):
-    if node.target != "fused_bmm":
+    if node.target != "mlu_tmo_fused_bmm_replacement":
         return False, []
     softmax_node = get_actual_node(node, 0)
     if not check_softmax_op(softmax_node):
@@ -206,8 +207,8 @@ def _is_fa(node: fx.Node):
         scale_params = params
         bmm_1_node = div_input_node
 
-    if bmm_1_node.target != "fused_bmm":
-        if bmm_1_node.target != "fused_baddbmm":
+    if bmm_1_node.target != "mlu_tmo_fused_bmm_replacement":
+        if bmm_1_node.target != "mlu_tmo_fused_bmm_add_replacement":
             return False, []
         if add_params[0] != None:
             logger.warning("Flash attention pass: Too many add operations")
@@ -215,14 +216,19 @@ def _is_fa(node: fx.Node):
         add_params[0] = bmm_1_node.args[2]
         add_params[1] = True
 
+    if node.args[-1] is None:
+        output_shape = [node.args[1][0], node.args[1][1], node.args[3][2]]
+    else:
+        output_shape = list(node.args[-1])
+
     return True, [
         bmm_1_node.args[0],
-        bmm_1_node.args[1],
-        node.args[1],
+        bmm_1_node.args[2],
+        node.args[2],
         scale_params,
         add_params,
-        list(node.args[4]),
-        node.args[5],
+        output_shape,
+        node.args[-3],
     ]
 
 
