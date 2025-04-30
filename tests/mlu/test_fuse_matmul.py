@@ -107,6 +107,10 @@ def fn19(inputs, weight, bias):
     output = F.silu(output)
     return output
 
+def fn20(inputs, weight, bias):
+    output = fn3(inputs, weight, bias).reshape(128, 32, 16)
+    output = torch.sigmoid(output)
+    return output.view(-1).reshape(128, 32, 16)
 
 def fn20(inputs, weight, bias):
     output = fn3(inputs, weight, bias).reshape(128, 32, 16)

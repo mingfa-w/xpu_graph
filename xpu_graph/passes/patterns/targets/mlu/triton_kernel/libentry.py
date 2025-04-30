@@ -298,7 +298,7 @@ class LibEntry(triton.KernelInterface):
             grid = grid(meta)
         grid = grid + (1, 1)
 
-        kernel[grid[0:3]](*k_args)
+        kernel[grid[0:3]](*[x for x in k_args if x is not None])
         return kernel, constexprs
 
 
