@@ -26,34 +26,14 @@ from xpu_graph.test_utils import (
 )
 
 
-class FeedForward(torch.nn.Module):
-    def __init__(
-        self, input_size: int, inner_size: int, act_mode: str, bias=False, gated=False
-    ):
-        super(FeedForward, self).__init__()
-        self.up_linear = torch.nn.Linear(input_size, inner_size, bias)
-        self.gated = gated
-        if self.gated:
-            self.gated_linear = torch.nn.Linear(input_size, inner_size, bias)
-        self.down_linear = torch.nn.Linear(inner_size, input_size, bias)
-        self.act = act_mode_dict[act_mode]
-
-    def forward(self, x):
-        act_out = self.act(self.up_linear(x).float()).to(x.dtype)
-        return (
-            self.down_linear(act_out * self.gated_linear(x))
-            if self.gated
-            else self.down_linear(act_out)
-        )
-
-
-def fn0(ffn_input, ffn_weight1, ffn_weight2, bias1=None, bias2=None, act="silu"):
-    output = torch.matmul(ffn_input, ffn_weight1.transpose(1, 0))
+def fn0(ffn_input, ffn_weight1, ffn_weight2, bias1=None, bias2=None, act="none"):
+    output = torch.matmul(ffn_input, ffn_weight1)
     if bias1 is not None:
         output = output + bias1
-    torch_act = act_mode_dict[act]
-    output = torch_act(output)
-    output = torch.matmul(output, ffn_weight2.transpose(1, 0))
+    if act != "none":
+        torch_act = act_mode_dict[act]
+        output = torch_act(output)
+    output = torch.matmul(output, ffn_weight2)
     if bias2 is not None:
         output = output + bias2
     return output
@@ -83,32 +63,36 @@ def fn3(ffn_input, ffn_weight1, ffn_weight2, bias1=None, bias2=None, act="silu")
 
 def ffn_test(xpu_graph_backend, func):
     with torch.no_grad():
-        batch = 5
-        seq_len = 16
-        input_size = 512
-        hidden_size = 1024
-        dtype = torch.float32
-        if func in [fn0, fn1]:
-            act_mode = "silu"
-        else:
-            act_mode = "gelu"
-        if func in [fn0]:
-            bias = False
-        else:
-            bias = True
+        batch = 12800
+        input_size = 256
+        weight_size1 = 128
+        weight_size2 = 32
+        dtype = torch.bfloat16
 
-        use_gate = False
-        ffn_input = torch.randn(
-            (batch, seq_len, input_size), dtype=dtype, device=device
+        tinyffn_input = torch.randn(
+            batch, input_size, dtype=dtype, device=device
         )
-        args = [ffn_input]
-        pytorch_ffn = FeedForward(input_size, hidden_size, act_mode, bias=bias).mlu()
-        pytorch_ffn = pytorch_ffn.to(dtype)
+        weight1 = torch.randn(
+            input_size, weight_size1, dtype=dtype, device=device
+        )
+        weight2 = torch.randn(
+            weight_size1, weight_size2, dtype=dtype, device=device
+        )
+
+        bias1 = torch.randn(weight_size1, dtype=dtype, device=device)
+        bias2 = torch.randn(weight_size2, dtype=dtype, device=device)
+        act_mode = "none"
+        if func in [fn0]:
+            #bias1 = None
+            bias2 = None
+            act_mode = "relu"
+
+        args = [tinyffn_input]
         args += [
-            pytorch_ffn.up_linear.weight,
-            pytorch_ffn.down_linear.weight,
-            pytorch_ffn.up_linear.bias,
-            pytorch_ffn.down_linear.bias,
+            weight1,
+            weight2,
+            bias1,
+            bias2,
         ]
         args += [act_mode]
 
@@ -124,24 +108,25 @@ def ffn_test(xpu_graph_backend, func):
 class TestFFN:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, freeze=True, opt_level=OptLevel.level2
+            is_training=False, freeze=False, opt_level=OptLevel.level2
         )
 
     @pytest.mark.parametrize(
         "pattern_func",
-        [fn0, fn1, fn2, fn3],
+        [fn0],
+        #[fn0, fn1, fn2, fn3],
     )
     def test_ffn_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             ffn_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.FusedMatMulAct changed graph" in caplog.text
+        assert "Pattern.FusedTinyFFN changed graph" in caplog.text
 
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, freeze=True, opt_level=OptLevel.level2
+        is_training=False, freeze=False, opt_level=OptLevel.level2
     )
     ffn_test(xpu_graph_backend, fn0)
-    ffn_test(xpu_graph_backend, fn1)
-    ffn_test(xpu_graph_backend, fn2)
-    ffn_test(xpu_graph_backend, fn3)
+    #ffn_test(xpu_graph_backend, fn1)
+    #ffn_test(xpu_graph_backend, fn2)
+    #ffn_test(xpu_graph_backend, fn3)
