@@ -49,15 +49,15 @@ class BMMParam:
         return True
 
     def set_input(self, node):
-        input_shape = node.meta["tensor_meta"].shape
-        input_dtype = node.meta["tensor_meta"].dtype
+        input_shape = node.meta["val"].shape
+        input_dtype = node.meta["val"].dtype
         self.input = node
         self.input_shape = input_shape
         self.output_dtype = input_dtype
         return True
 
     def set_weight(self, node):
-        weight_shape = node.meta["tensor_meta"].shape
+        weight_shape = node.meta["val"].shape
         self.weight = node
         self.weight_shape = weight_shape
         self.trans_b = False
@@ -72,7 +72,7 @@ class BMMParam:
         b1, m1, k1 = self.input_shape
         b2, k2, n2 = self.weight_shape
 
-        bias_shape = bias.meta["tensor_meta"].shape
+        bias_shape = bias.meta["val"].shape
         b3, m3, n3 = bias_shape
         if len(bias_shape) < 3:
             return False
