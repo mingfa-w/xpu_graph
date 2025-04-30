@@ -52,22 +52,24 @@ class PassManager:
         changed = True
         while changed:
             from xpu_graph.passes.fake_tensor_prop import FakeTensorProp
-            from torch._guards import active_fake_mode
 
-            FakeTensorProp(gm, active_fake_mode()).propagate(*example_inputs)
+            from torch._guards import detect_fake_mode
+            from torch._subclasses.fake_tensor import FakeTensor
+
+            assert all(
+                [
+                    isinstance(inp, FakeTensor)
+                    for inp in example_inputs
+                    if isinstance(inp, torch.Tensor)
+                ]
+            )
+            fake_mode = detect_fake_mode(example_inputs)
+
+            FakeTensorProp(gm, fake_mode).propagate_dont_convert_inputs(*example_inputs)
 
             changed = False
             for optimizer in self._enable_passes:
                 changed = changed or optimizer(gm)
-
-        if self._config.enable_cache:
-            # Note: Currently, we only inline modules with a E2E make_fx, just for serialize / desrialize
-            from torch.fx.experimental.proxy_tensor import make_fx
-
-            pre_dispatch = stage == FxStage.pregrad
-            gm = make_fx(gm, pre_dispatch=pre_dispatch, record_module_stack=True)(
-                *example_inputs
-            )
 
         return gm
 
