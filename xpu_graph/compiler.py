@@ -71,10 +71,6 @@ class XpuGraph:
 
         logger.info(f"{config}")
 
-        if self._config.target == Target.ascend:
-            self._config.enable_cache = False
-            logger.warning("Target Ascend does not support cache.")
-
         self._pass_manager = PassManager(self._config)
         self._cache = (
             cache

@@ -3,28 +3,7 @@ on:
   pull_request:
     branches:
       - master
-    paths_ignore:
-      - 'xpu_graph/backend/ascend.py'
-      - 'xpu_graph/backend/npu.py'
-      - 'xpu_graph/passes/patterns/targets/ascend/'
-      - 'xpu_graph/passes/patterns/targets/npu/'
-      - 'tests/ascend'
-      - 'tests/npu'
-      - 'tests/ops'
-      - 'docker/*'
     types: [opened, synchronize, reopened]
-  push:
-    branches:
-      - master
-    paths_ignore:
-      - 'xpu_graph/backend/ascend.py'
-      - 'xpu_graph/backend/npu.py'
-      - 'xpu_graph/passes/patterns/targets/ascend/'
-      - 'xpu_graph/passes/patterns/targets/npu/'
-      - 'tests/ascend'
-      - 'tests/npu'
-      - 'tests/ops'
-      - 'docker/*'
   workflow_dispatch:
 defaults:
   run:
@@ -39,4 +18,4 @@ jobs:
         shell: bash
         run: |
           echo "Running MLU tests..."
-          python3 -m pytest --ignore=tests/xpu_ops --ignore=tests/ascend --ignore=tests/npu tests
+          python3 -m pytest --ignore=tests/xpu_ops --ignore=tests/npu tests

@@ -15,7 +15,7 @@ def vendor_compiler(
         from .ascend import ascend_compile
 
         logger.info("ascend_compile start...")
-        ascend_compiled = ascend_compile(gm, fake_inputs, config_dict, **extra_kwargs)
+        ascend_compiled = ascend_compile(gm, fake_inputs, **extra_kwargs)
         logger.info("ascend_compile complete")
         return ascend_compiled
     elif target == Target.npu:

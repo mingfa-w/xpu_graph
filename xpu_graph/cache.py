@@ -4,6 +4,7 @@ import os
 import pickle
 from typing import Union, Optional
 from os import PathLike
+
 import torch
 from torch._dynamo.convert_frame import compile_lock
 from torch._dynamo.device_interface import get_interface_for_device
@@ -28,7 +29,6 @@ from torch.utils._python_dispatch import _disable_current_modes
 from .config import XpuGraphConfig
 from .fx_utils import FxStage
 from .utils import logger
-from collections.abc import Callable
 
 
 class _ArgWrapper:
@@ -57,7 +57,7 @@ def _get_target_function(fn_name: str):
 
 
 class SerializeWrapper(torch.nn.Module):
-    def __init__(self, compiled_fn: Union[CompiledFxGraph, GraphModule, Callable]):
+    def __init__(self, compiled_fn: Union[CompiledFxGraph, GraphModule]):
         super().__init__()
         self.wrapped_fn = compiled_fn
 

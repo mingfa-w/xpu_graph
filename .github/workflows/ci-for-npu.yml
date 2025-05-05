@@ -4,20 +4,10 @@ on:
     branches:
       - master
     types: [opened, synchronize, reopened]
-    paths_ignore:
-      - 'xpu_graph/backend/mlu.py'
-      - 'xpu_graph/passes/patterns/targets/mlu/'
-      - 'tests/mlu'
-      - 'docker/*'
   push:
     branches:
       - develop
       - master
-    paths_ignore:
-      - 'xpu_graph/backend/mlu.py'
-      - 'xpu_graph/passes/patterns/targets/mlu/'
-      - 'tests/mlu'
-      - 'docker/*'
   workflow_dispatch:
 defaults:
   run:
@@ -27,7 +17,7 @@ jobs:
     name: Run npu tests
     runs-on: NPU
     container:
-      image: hub.byted.org/arnold/ascend_for_leo:3579b13e2a1ce9d478cee8f35f6ffe9f
+      image: hub.byted.org/aicompiler/search.pytorch260.npu.ci:py3112.th260.cann8.0.rc3.alpha003
       volumes:
         - /etc/localtime:/etc/localtime
         - /usr/local/Ascend/driver:/usr/local/Ascend/driver
