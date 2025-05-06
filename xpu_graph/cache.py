@@ -119,7 +119,7 @@ class SerializeWrapper(torch.nn.Module):
             (compiled_fn,) = arg_tuple
             # Torch Inductor config is lazy initialized. invoke it manually
             for device in compiled_fn.device_types:
-                logger.debug(lambda:f"Check interface for device: {device}")
+                logger.debug(f"Check interface for device: {device}")
                 get_interface_for_device(device)
             path = get_path(compiled_fn.cache_key, "py")[2]
             compiled_fn.current_callable = PyCodeCache.load_by_key_path(
@@ -129,7 +129,7 @@ class SerializeWrapper(torch.nn.Module):
                 compiled_fn.constants,
             ).call
             cudagraphs = compiled_fn.cudagraph_info is not None
-            logger.debug(lambda:f"Cudagraphs enabled: {cudagraphs}")
+            logger.debug(f"Cudagraphs enabled: {cudagraphs}")
             # Note:
             #   1. This post_compile function is only available on 2.5.x,
             #      it may be in different locations in other versions
@@ -190,7 +190,7 @@ class XpuGraphCache:
         stage: FxStage,
     ):
         key = f"{gm}-{fake_inputs}-{config}-{stage}"
-        logger.debug(lambda:f"Cache Key readable: \n{key}")
+        logger.debug(f"Cache Key readable: \n{key}")
         hashkey = hashlib.md5(key.encode()).hexdigest()
         logger.info(f"Cache Key: {hashkey}")
         return hashkey
@@ -283,5 +283,5 @@ def default_cache():
         import tempfile
 
         cache_path = tempfile.mkdtemp(prefix="xpugraph_")
-        logger.debug(lambda:f"Use {cache_path} as default local cache")
+        logger.debug(f"Use {cache_path} as default local cache")
     return XpuGraphLocalCache(cache_path)

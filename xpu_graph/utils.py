@@ -12,14 +12,6 @@ class _LoggerWrapper:
     def __init__(self, logger):
         self._logger = logger
 
-    # NOTE(liuyuan): msg_func, a lazy string formatter to avoid unnecessary overhead if debug level is not enabled.
-    # NOTE(liuyuan): unnecessary to change the __getattr__ for the following method because it is prior to __getattr__.
-    def debug(self, msg_func, *args, **kwargs):
-        assert callable(msg_func), "msg_func must be a callable"
-        if not self._logger.isEnabledFor(logging.DEBUG):
-            return
-        self._logger.debug(msg_func(), *args, **kwargs)
-
     def __getattr__(self, name):
         return getattr(self._logger, name)
 
@@ -87,7 +79,7 @@ def xpu_timer(func):
         else:
             func_name = func.__name__
 
-        logger.debug(lambda:f"{func_name} cost {end - start:.4f}s")
+        logger.debug(f"{func_name} cost {end - start:.4f}s")
         return res
 
     return wrapper
@@ -160,11 +152,10 @@ class NodesStatistics:
 class GitLikeDiffer:
     differ = difflib.Differ()
 
-    @classmethod
-    def diff(cls, lhs, rhs):
-        lhs = str(lhs).splitlines()
-        rhs = str(rhs).splitlines()
-        diff = cls.differ.compare(lhs, rhs)
+    def diff(self):
+        self.lhs = str(self.lhs).splitlines()
+        self.rhs = str(self.rhs).splitlines()
+        diff = self.differ.compare(self.lhs, self.rhs)
         result = []
         is_diff = False
         for line in diff:
@@ -183,3 +174,10 @@ class GitLikeDiffer:
                 # TODO(liuyuan): Is this necessary? Maybe we should ignore it. Maybe.
                 result.append(line)
         return '\n'.join(result) if is_diff else "\033[32mNo difference found!\033[0m"
+    
+    def __init__(self, lhs, rhs):
+        self.lhs = lhs
+        self.rhs = rhs
+
+    def __str__(self):
+        return self.diff()

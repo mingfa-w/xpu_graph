@@ -61,7 +61,7 @@ class PatternManager(Optimizer):
 
         for group, group_patterns in self._enable_patterns.items():
             logger.debug(
-                lambda:f"xpu_graph enable builtin {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}"
+                f"xpu_graph enable builtin {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}"
             )
 
     def get_pass_with_stage(self, stage):

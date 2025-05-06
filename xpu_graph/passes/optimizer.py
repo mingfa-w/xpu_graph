@@ -39,7 +39,7 @@ class Optimizer(ABC):
 
         if changed:
             logger.debug(
-                lambda:f"{self.__class__.__bases__[0].__name__}.{self.__class__.__name__} changed graph, before: {prev_nodes_num} nodes, after: {len(gm.graph.nodes)} nodes."
+                f"{self.__class__.__bases__[0].__name__}.{self.__class__.__name__} changed graph, before: {prev_nodes_num} nodes, after: {len(gm.graph.nodes)} nodes."
             )
 
         if changed and self._dump_graph:
