@@ -4,6 +4,8 @@ from .utils import logger
 from .cache import XpuGraphCache
 from .compiler import XpuGraph
 import logging
+from contextlib import contextmanager
+import time
 
 
 def is_similar(result, expected, rtol=0.01, atol=0.01):
@@ -131,3 +133,10 @@ class skip_xpu_graph_cache:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.backend._cache = self.cache
+
+def timeit(func, *args, **kwargs):
+    def wrap(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        return result, time.time() - start
+    return wrap
