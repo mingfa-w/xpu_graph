@@ -44,13 +44,13 @@ def optimize_graph(gm, sample_inputs, config=None):
     ]
 
     with fake_mode:
-        logger.debug(f"before xpu_optimize_graph, graph like:\n {gm.graph}")
+        logger.debug(lambda: f"before xpu_optimize_graph, graph like:\n {gm.graph}")
         logger.info(f"before xpu_optimize_graph, nodes num: {len(gm.graph.nodes)}")
 
         pass_manager = PassManager(config)
         xpu_optimized = pass_manager(gm, fake_inputs, stage=FxStage.inference)
 
-        logger.debug(f"after xpu_optimize_graph, graph like:\n {xpu_optimized.graph}")
+        logger.debug(lambda: f"after xpu_optimize_graph, graph like:\n {xpu_optimized.graph}")
         logger.info(
             f"after xpu_optimize_graph, nodes num: {len(xpu_optimized.graph.nodes)}"
         )
@@ -107,7 +107,7 @@ class XpuGraph:
                 # NOTE(liuyuan): gm could be changed in the compiler, and we should keep the original graph for logging difference.
                 original_gm_graph = gm.graph
                 with local_logger("before"):
-                    logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
+                    logger.debug(lambda:f"before xpu_graph, graph like:\n {gm.graph}")
                     logger.info(f"xpu_graph passes start {stage}...")
 
                 nodes_statistics.insert_statistics("before xpu_graph", gm)
@@ -116,9 +116,9 @@ class XpuGraph:
 
                 with local_logger("after"):
                     logger.info("xpu_graph passes complete")
-                    logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
+                    logger.debug(lambda:f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                     logger.debug(
-                        f"Final difference after optimizations by xpu_graph:\n {GitLikeDiffer.diff(original_gm_graph, xpu_compiled.graph)}"
+                        lambda:f"Final difference after optimizations by xpu_graph:\n {GitLikeDiffer.diff(original_gm_graph, xpu_compiled.graph)}"
                     )
 
                 logger.info(f"node statistic: {str(nodes_statistics)}")
@@ -159,13 +159,13 @@ class XpuGraph:
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
             #    and 2. aot_autograd traces grad again
             # It's okay use optimized infer-graph for training as well
-            logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
+            logger.debug(lambda:f"before decompose: graph like:\n {dynamo_gm.graph}")
             logger.info("decompose graph start...")
             dispatched_gm, fake_inputs = dispatch_graph(
                 dynamo_gm, example_inputs, stage=FxStage.pregrad
             )
             logger.info("decompose graph complete")
-            logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
+            logger.debug(lambda:f"after decompose, graph like:\n {dispatched_gm.graph}")
 
             pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
 
@@ -174,14 +174,14 @@ class XpuGraph:
                 bw_compiler=_staged_compiler(FxStage.backward),
             )(pregrad_gm, fake_inputs)
         else:
-            logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
+            logger.debug(lambda:f"before decompose: graph like:\n {dynamo_gm.graph}")
             logger.info("decompose graph start...")
             dispatched_gm, fake_inputs = dispatch_graph(
                 dynamo_gm, example_inputs, stage=FxStage.inference
             )
             logger.info("decompose graph complete")
-            logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
-            logger.debug(f"Difference:\n {GitLikeDiffer.diff(dynamo_gm.graph, dispatched_gm.graph)}")
+            logger.debug(lambda:f"after decompose, graph like:\n {dispatched_gm.graph}")
+            logger.debug(lambda:f"Difference:\n {GitLikeDiffer.diff(dynamo_gm.graph, dispatched_gm.graph)}")
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 

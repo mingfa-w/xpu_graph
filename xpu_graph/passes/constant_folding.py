@@ -76,7 +76,7 @@ class ConstantFolding(Optimizer):
                     constant_node = graph.create_node("get_attr", constant_name)
                     node.replace_all_uses_with(constant_node)
 
-                logger.debug(f"constant folding graph: {graph}")
+                logger.debug(lambda:f"constant folding graph: {graph}")
 
         gm.graph.lint()
 

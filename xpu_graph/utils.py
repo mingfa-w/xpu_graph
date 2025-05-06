@@ -12,6 +12,14 @@ class _LoggerWrapper:
     def __init__(self, logger):
         self._logger = logger
 
+    # NOTE(liuyuan): msg_func, a lazy string formatter to avoid unnecessary overhead if debug level is not enabled.
+    # NOTE(liuyuan): unnecessary to change the __getattr__ for the following method because it is prior to __getattr__.
+    def debug(self, msg_func, *args, **kwargs):
+        assert callable(msg_func), "msg_func must be a callable"
+        if not self._logger.isEnabledFor(logging.DEBUG):
+            return
+        self._logger.debug(msg_func(), *args, **kwargs)
+
     def __getattr__(self, name):
         return getattr(self._logger, name)
 
@@ -79,7 +87,7 @@ def xpu_timer(func):
         else:
             func_name = func.__name__
 
-        logger.debug(f"{func_name} cost {end - start:.4f}s")
+        logger.debug(lambda:f"{func_name} cost {end - start:.4f}s")
         return res
 
     return wrapper
@@ -163,14 +171,14 @@ class GitLikeDiffer:
             if line.startswith("- "):
                 is_diff = True
                 # NOTE(liuyuan): Red for removals
-                result.append(f"\033[31m{line}\033[0m") 
+                result.append(f"\033[31m{line}\033[0m")
             elif line.startswith("+ "):
                 is_diff = True
                 # NOTE(liuyuan): Green for additions
-                result.append(f"\033[32m{line}\033[0m") 
+                result.append(f"\033[32m{line}\033[0m")
             elif line.startswith("? "):
                 # NOTE(liuyuan): Yellow for hints
-                result.append(f"\033[33m{line.strip()}\033[0m") 
+                result.append(f"\033[33m{line.strip()}\033[0m")
             else:
                 # TODO(liuyuan): Is this necessary? Maybe we should ignore it. Maybe.
                 result.append(line)
