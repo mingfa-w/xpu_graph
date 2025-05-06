@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import os
+import sys
 import pickle
 from typing import Union, Optional
 from os import PathLike
@@ -40,14 +41,8 @@ class _ArgWrapper:
 
 def _get_target_function(fn_name: str):
     fqn_list = fn_name.split(".")
-    import builtins
-    import operator
-
-    import torch
-
-    supported_mods = {"torch": torch, "operator": operator, "builtins": builtins}
     try:
-        target = supported_mods[fqn_list[0]]
+        target = sys.modules[fqn_list[0]]
         for attr in fqn_list[1:]:
             target = getattr(target, attr)
         assert callable(target)
