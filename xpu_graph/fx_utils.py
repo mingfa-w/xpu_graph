@@ -56,12 +56,13 @@ def trace_and_inline(
         wrapped, arglist = wrapper_and_args_for_make_fx(callable, args, kwargs)
 
         # use the original (fake) tensor to avoid dynamic-control-flow issues
+        # and "real" tracing mode should be used to avoid fakify again
         f_arglist = list(map_arg(arglist, lambda arg: arg.meta["val"]))
         traced = make_fx(
             wrapped,
             pre_dispatch=predispatch,
             record_module_stack=True,
-            tracing_mode="fake",
+            tracing_mode="real",
         )(f_arglist)
         traced.recompile()
 
