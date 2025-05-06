@@ -289,6 +289,7 @@ class FusedBMM(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
+        return is_modified
         is_modified |= match_bmm(graph_module)
         is_modified |= match_bmm_view(graph_module, "mlu_tmo_fused_bmm_replacement")
         graph_module.graph.lint()

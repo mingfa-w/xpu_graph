@@ -185,6 +185,8 @@ class FusedCombineBmm(nn.Module):
             output = torch.gelu(output)
         elif act == "silu":
             output = torch.silu(output)
+        elif act == "sigmoid":
+            output = torch.sigmoid(output)
 
         '''
         # Case 2: input shape [T, B, M] and weight shape [T, B, K]
