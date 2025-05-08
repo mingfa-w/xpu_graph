@@ -3,6 +3,7 @@ import torch_mlu
 import triton
 import triton.language as tl
 from typing import List
+from . import libentry
 
 @triton.jit
 def single_mul_sum_cat(
@@ -76,6 +77,7 @@ def single_mul_sum_cat(
     )
     tl.store(output_block_ptr, value0, boundary_check=(0,))
 
+@libentry.libentry()
 @triton.jit
 def mlu_triton_mul_sum_cat_kernel(
     mul0,

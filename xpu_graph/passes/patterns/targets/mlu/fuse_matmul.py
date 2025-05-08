@@ -199,7 +199,7 @@ class FusedMatMulReplacement(nn.Module):
                     act,
                     1.0,
                     0.0,
-                    False,
+                    True,
                     False,
                     trans_b=trans_b,
                 )

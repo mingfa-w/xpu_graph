@@ -2,8 +2,9 @@ import torch
 import torch_mlu
 import triton
 import triton.language as tl
+from . import libentry
 
-
+@libentry.libentry()
 @triton.jit
 def mlu_triton_slice_cat_kernel(
     data_ptr, output_ptr, indices_ptr, stride, n_elements, BLOCK_SIZE: tl.constexpr
