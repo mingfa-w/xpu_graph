@@ -3,6 +3,9 @@ import torch_mlu
 import triton
 import triton.language as tl
 from typing import List
+from . import libentry
+from .get_mlu_devinfo import get_device_properties
+
 
 @triton.jit
 def single_mul_sum_cat(
@@ -76,6 +79,8 @@ def single_mul_sum_cat(
     )
     tl.store(output_block_ptr, value0, boundary_check=(0,))
 
+
+@libentry.libentry()
 @triton.jit
 def mlu_triton_mul_sum_cat_kernel(
     mul0,
@@ -158,8 +163,10 @@ def mlu_triton_mul_sum_cat_kernel(
             BLOCK_SIZE_S2,
         )
 
+
 @torch.library.custom_op("torch_mlu_triton::fused_mul_sum_cat", mutates_args=())
 def fused_mul_sum_cat_2inp(mul_list: List[torch.Tensor]) -> torch.Tensor:
+    props = get_device_properties()
     mul1, mul2, mul3, mul4 = mul_list
     input_row = max(mul1.shape[0], mul2.shape[0])
     s0, s1, s2 = mul1.shape
@@ -169,10 +176,8 @@ def fused_mul_sum_cat_2inp(mul_list: List[torch.Tensor]) -> torch.Tensor:
     size_of_dtype = 2
     if mul1.dtype == torch.float32:
         size_of_dtype = 4
-    nram_limit = 384 * 1024
-    if block_size_r * block_size_c * size_of_dtype * 4 > nram_limit:
-        block_size_r = nram_limit // (size_of_dtype * block_size_c * 4)
-    # block_size_r 3 128 128 16384
+    if block_size_r * block_size_c * size_of_dtype * 4 > props.max_nram_size:
+        block_size_r = props.max_nram_size // (size_of_dtype * block_size_c * 4)
 
     output_tensors = torch.empty(
         (input_row, s2 * 2),
@@ -181,10 +186,7 @@ def fused_mul_sum_cat_2inp(mul_list: List[torch.Tensor]) -> torch.Tensor:
     )
 
     total_jobs = mul2.shape[0] if s0 == 1 else s0
-    processor_count = torch.mlu.get_device_properties(
-        torch.mlu.current_device()
-    ).multi_processor_count
-    grid = (processor_count, 1, 1)
+    grid = (props.total_cores, 1, 1)
     mlu_triton_mul_sum_cat_kernel[grid](
         mul1.view(mul1.shape[0], -1),
         mul2.view(mul2.shape[0], -1),
@@ -213,6 +215,7 @@ def fused_mul_sum_cat_2inp(mul_list: List[torch.Tensor]) -> torch.Tensor:
     )
 
     return output_tensors
+
 
 @fused_mul_sum_cat_2inp.register_fake
 def fused_mul_sum_cat_2inp_fake(mul_list: List[torch.Tensor]) -> torch.Tensor:

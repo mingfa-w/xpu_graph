@@ -97,16 +97,13 @@ class SliceSumCatOperation(nn.Module):
                 target_tensors.append(sum_tensor)
             return torch.cat(target_tensors, axis=-1)
         else:
-            processor_count = torch.mlu.get_device_properties(
-                torch.mlu.current_device()
-            ).multi_processor_count
             slice_ = []
             for param in slice_param:
                 slice_ += [param[0], param[1]]
             slice_tensor = torch.tensor(slice_, dtype=torch.int32, device=input.device)
             output_num = len(slice_param)
             return fuse_slice_sum_cat(
-                input, slice_tensor, processor_count, output_num, end
+                input, slice_tensor, output_num, end
             )
 
 

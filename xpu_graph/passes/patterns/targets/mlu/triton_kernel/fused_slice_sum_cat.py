@@ -4,6 +4,8 @@ import torch_mlu
 import triton
 import triton.language as tl
 from typing import List
+from . import libentry
+from .get_mlu_devinfo import get_device_properties
 
 dtype_dict = {
     torch.bfloat16: 1,
@@ -11,19 +13,19 @@ dtype_dict = {
     torch.float32: 3,
 }
 
-
+@libentry.libentry()
 @triton.jit
 def mlu_triton_slice_sum_cat_kernel(
     output_ptr,
     input_ptr,
     indices_ptr,
     input_stride0,
-    input_stride1,
+    input_stride1: tl.constexpr,
     output_stride0,
     total_jobs,
     row,
     col,
-    output_num,
+    output_num: tl.constexpr,
     BLOCK_SIZE_T: tl.constexpr = 32,
     BLOCK_SIZE_I: tl.constexpr = 32,
     BLOCK_SIZE_R: tl.constexpr = 32,
@@ -52,21 +54,15 @@ def mlu_triton_slice_sum_cat_kernel(
         input_offset = input_ptr + offset_id * input_stride0
         output_offset = output_ptr + offset_id * output_stride0
 
-        # Load the slice input using the largest slice input parameter.
-        input_data = tl.load(
-            input_offset + offset_row[:, None] * input_stride1 + offset_col[None, :],
-            mask=mask,
-        )
-        for i in range(output_num):
+        for i in tl.static_range(output_num):
             # slice from input_data on chip
             indices_start = indices[i * 2]
             indices_end = indices[i * 2 + 1]
-            slice_mask = (offset_row < indices_end) & (offset_row > (indices_start - 1))
-            combined_mask = slice_mask[:, None] & mask_col[None, :]
-            slice_value = tl.where(combined_mask, input_data, 0)
-            sum_value = tl.sum(slice_value, axis=0)
+            valid_rows = (offset_row >= indices_start) & (offset_row < indices_end)
+            slice_data = tl.load(input_offset + offset_row[:, None] * input_stride1 + offset_col[None, :],
+                mask=valid_rows[:, None] & mask_col[None, :], other=0)
+            sum_value = tl.sum(slice_data, axis=0)
             tl.store(output_offset + i * col + offset_col, sum_value, mask=mask_col)
-
 
 @torch.library.custom_op(
     "torch_mlu_triton::fuse_slice_sum_cat", mutates_args=(), device_types="mlu"
@@ -74,10 +70,10 @@ def mlu_triton_slice_sum_cat_kernel(
 def fuse_slice_sum_cat(
     input_tensor: torch.Tensor,
     slice_tensor: torch.Tensor,
-    processor_count: int,
     output_num: int,
     end_row: int,
 ) -> torch.Tensor:
+    props = get_device_properties()
     output_tensor = torch.empty(
         [input_tensor.shape[0], output_num * input_tensor.shape[2]],
         dtype=input_tensor.dtype,
@@ -93,7 +89,8 @@ def fuse_slice_sum_cat(
     block_size_i = ((output_num * 2 + mini_block - 1) // mini_block) * mini_block
     block_size_r = ((end_row + mini_block - 1) // mini_block) * mini_block
     block_size_c = ((col + mini_block - 1) // mini_block) * mini_block
-    grid = (processor_count, 1, 1)
+    grid = (props.total_cores, 1, 1)
+
     mlu_triton_slice_sum_cat_kernel[grid](
         output_tensor,
         input_tensor,
@@ -111,14 +108,13 @@ def fuse_slice_sum_cat(
         block_size_c,
         num_stages=3,
     )
-    return output_tensor
 
+    return output_tensor
 
 @fuse_slice_sum_cat.register_fake
 def fuse_slice_sum_cat_fake(
     input_tensor: torch.Tensor,
     slice_tensor: torch.Tensor,
-    processor_count: int,
     output_num: int,
     end_idx: int,
 ) -> torch.Tensor:
@@ -128,3 +124,4 @@ def fuse_slice_sum_cat_fake(
         device=input_tensor.device,
     )
     return output_tensor
+
