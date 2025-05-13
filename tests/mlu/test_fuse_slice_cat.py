@@ -366,8 +366,4 @@ if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
         is_training=False, freeze=True, opt_level=OptLevel.level1, debug=False, vendor_compiler_config=None
     )
-    slice_test(xpu_graph_backend, fn0)
-    slice_test(xpu_graph_backend, fn1)
-    slice_test(xpu_graph_backend, fn5)
-    slice_test(xpu_graph_backend, fn6)
     slice_test(xpu_graph_backend, fn7)

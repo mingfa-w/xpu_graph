@@ -19,6 +19,10 @@ from .triton_kernel.fused_sum2d import (
     fused_sum_2d,
 )
 
+from .triton_kernel.fused_emb_cat import (
+    fused_emb_cat,
+)
+
 
 class RMSNormModule(torch.nn.Module):
     def forward(self, inputs, weights, epsilon):
@@ -64,9 +68,7 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
 
 class FuseSliceCatSameInputModule_v2(torch.nn.Module):
     def forward(self, input_tensor, many_slices):
-        from torch._subclasses.fake_tensor import FakeTensor
-
-        if isinstance(input_tensor, FakeTensor):
+        if 0:
             if len(input_tensor.shape) != 2:
                 raise NotImplementedError("input must be 2d")
             indices = []
@@ -121,33 +123,14 @@ class FuseSliceCatSameInputModule_v2(torch.nn.Module):
                 output_dims.append(sum_)
                 num_output += 1
 
-            input_dims = torch.tensor(
-                input_dims, device=input_tensor.device, dtype=torch.int32
-            )
-            input_offsets = torch.tensor(
-                input_offsets, device=input_tensor.device, dtype=torch.int32
-            )
-            output_dims = torch.tensor(
-                output_dims, device=input_tensor.device, dtype=torch.int32
-            )
-            output_offsets = torch.tensor(
-                output_offsets, device=input_tensor.device, dtype=torch.int32
-            )
-            output_dims_cpu = torch.tensor(output_dims, device="cpu", dtype=torch.int32)
-            output_ids = torch.tensor(
-                output_ids, device=input_tensor.device, dtype=torch.int32
-            )
-
-            output = torch.ops.torch_mlu.emb_concat(
+            return fused_emb_cat(
                 input_tensor,
                 input_offsets,
                 input_dims,
                 output_ids,
                 output_offsets,
                 output_dims,
-                output_dims_cpu,
             )
-            return output
 
 
 class ComboSumModule(torch.nn.Module):
