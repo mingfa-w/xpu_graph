@@ -118,7 +118,8 @@ class XpuGraph:
                     logger.info("xpu_graph passes complete")
                     logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                     logger.debug(
-                        f"Final difference after optimizations by xpu_graph:\n {GitLikeDiffer.diff(original_gm_graph, xpu_compiled.graph)}"
+                        "Final difference after optimizations by xpu_graph:%s\n",
+                        GitLikeDiffer(original_gm_graph, xpu_compiled.graph),
                     )
 
                 logger.info(f"node statistic: {str(nodes_statistics)}")
@@ -193,7 +194,7 @@ class XpuGraph:
             logger.info("decompose graph complete")
             logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
             logger.debug(
-                f"Difference:\n {GitLikeDiffer.diff(dynamo_gm.graph, dispatched_gm.graph)}"
+                "Difference:\n %s", GitLikeDiffer(dynamo_gm.graph, dispatched_gm.graph)
             )
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)

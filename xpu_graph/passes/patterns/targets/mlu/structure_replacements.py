@@ -54,7 +54,6 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
             rows,
             len(indices),
             input_tensor.stride(0),
-            16384,  # blocksize
         )
 
 
