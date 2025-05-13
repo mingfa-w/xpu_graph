@@ -1,0 +1,105 @@
+diff --git a/tests/mlu/test_fuse_slice_stack_sum.py b/tests/mlu/test_fuse_slice_stack_sum.py
+index e53f9f0..151b910 100755
+--- a/tests/mlu/test_fuse_slice_stack_sum.py
++++ b/tests/mlu/test_fuse_slice_stack_sum.py
+@@ -254,4 +254,4 @@ if __name__ == "__main__":
+         debug=False,
+         vendor_compiler_config=None,
+     )
+-    stack_test(xpu_graph_backend, fn2)
++    stack_test(xpu_graph_backend, fn3)
+diff --git a/xpu_graph/passes/patterns/structure/fuse_slice_stack.py b/xpu_graph/passes/patterns/structure/fuse_slice_stack.py
+index 0494885..4131d32 100755
+--- a/xpu_graph/passes/patterns/structure/fuse_slice_stack.py
++++ b/xpu_graph/passes/patterns/structure/fuse_slice_stack.py
+@@ -190,6 +190,17 @@ def find_sum2d_input(candidates):
+         sum_input_dict[key].append(sum_node)
+     return sum_input_dict
+ 
++def partly_topo_sort(gm: fx.Graph, node: fx.Node):
++    import queue
++
++    que = queue.Queue()
++    que.put(node)
++    while not que.empty():
++        cur = que.get()
++        for user in cur.users:
++            if user < cur:
++                cur.append(user)
++                que.put(user)
+ 
+ class ComboSum2d(Pattern):
+     _opt_level = OptLevel.level2
+@@ -205,7 +216,6 @@ class ComboSum2d(Pattern):
+ 
+     def process(self, graph_module: fx.GraphModule):
+         changed = False
+-        return False
+ 
+         graph_module.add_submodule(
+             "combo_sum",
+@@ -219,19 +229,20 @@ class ComboSum2d(Pattern):
+         ]
+         sum_input_dict = find_sum2d_input(candidates)
+         for key, sum_nodes in sum_input_dict.items():
+-            sum_node = sum_nodes[0]
+-            with graph_module.graph.inserting_before(sum_node):
++            sum_node = sum_nodes[-1]
++            with graph_module.graph.inserting_after(sum_node):
+                 new_nodes = graph_module.graph.call_module(
+                     "combo_sum",
+                     args=([s.args[0] for s in sum_nodes], sum_node.args[1]),
+                 )
+ 
+             for idx, ori_node in enumerate(sum_nodes):
+-                with graph_module.graph.inserting_before(ori_node):
++                with graph_module.graph.inserting_after(new_nodes):
+                     idx_node = graph_module.graph.call_function(
+                         operator.getitem, args=(new_nodes, idx)
+                     )
+                 ori_node.replace_all_uses_with(idx_node)
++                partly_topo_sort(graph_module, idx_node)
+                 graph_module.graph.erase_node(ori_node)
+             changed = True
+ 
+diff --git a/xpu_graph/passes/patterns/targets/mlu/triton_kernel/fused_sum2d.py b/xpu_graph/passes/patterns/targets/mlu/triton_kernel/fused_sum2d.py
+index c55d048..b397b72 100644
+--- a/xpu_graph/passes/patterns/targets/mlu/triton_kernel/fused_sum2d.py
++++ b/xpu_graph/passes/patterns/targets/mlu/triton_kernel/fused_sum2d.py
+@@ -151,13 +151,13 @@ def fused_sum_2d(
+         )
+         outputs.append(output)
+ 
+-    max_s0 = min(props.max_nram_size // (max_s1 * max_s2 * 2), max_s0)
+-    max_s0 = (max_s0 + 16 - 1) // 16 * 16
+     max_s1 = (max_s1 + 16 - 1) // 16 * 16
+     max_s2 = (max_s2 + 16 - 1) // 16 * 16
++    max_s0 = min(props.max_nram_size // (max_s1 * max_s2 * 8), max_s0)
++    max_s0 = (max_s0 + 16 - 1) // 16 * 16
+ 
+     # input must be contiguous
+-    mlu_triton_sum_2d_kernel[(1,)](
++    mlu_triton_sum_2d_kernel[(props.total_cores,)](
+         tuple([i.contiguous() for i in inputs]),
+         tuple(outputs),
+         tuple([i.shape[0] for i in inputs]),
+@@ -194,11 +194,9 @@ def fused_sum_2d_fake(
+         )
+         outputs.append(output)
+     return outputs
+-
+-
+-"""
++'''
+ inputs = [
+-    torch.randn((1, 4, 1), dtype=torch.float32, device="mlu:0")
++            torch.randn((512, 4, 32), dtype=torch.float32, device="mlu:0")
+ ]
+ print(inputs)
+ output = fused_sum_2d(inputs, dim=1)
+@@ -206,4 +204,4 @@ output1 = [torch.sum(input, dim=[1]) for input in inputs]
+ print(output1[0][0])
+ print(output[0][0])
+ exit()
+-"""
++'''

@@ -64,46 +64,94 @@ class FuseSliceCatSameInputModule(torch.nn.Module):
 
 class FuseSliceCatSameInputModule_v2(torch.nn.Module):
     def forward(self, input_tensor, many_slices):
-        if len(input_tensor.shape) != 2:
-            raise NotImplementedError("input must be 2d")
-        indices = []
-        total_output = []
-        slices_index = [0]
-        for slices in many_slices:
-            sum_ = 0
-            for slice_ in slices:
-                start, end = slice_
-                indices += range(start, end)
-                sum_ += end - start
-            slices_index.append(sum_ + slices_index[-1])
-            total_output.append(sum_)
-        indices_tensor = torch.tensor(
-            indices, dtype=torch.int32, device=input_tensor.device
-        )
+        from torch._subclasses.fake_tensor import FakeTensor
 
-        output_total = fused_slice_cat(
-            input_tensor,
-            indices_tensor,
-            input_tensor.shape[0],
-            len(indices),
-            input_tensor.stride(0),
-        )
+        if isinstance(input_tensor, FakeTensor):
+            if len(input_tensor.shape) != 2:
+                raise NotImplementedError("input must be 2d")
+            indices = []
+            total_output = []
+            slices_index = [0]
+            for slices in many_slices:
+                sum_ = 0
+                for slice_ in slices:
+                    start, end = slice_
+                    indices += range(start, end)
+                    sum_ += end - start
+                slices_index.append(sum_ + slices_index[-1])
+                total_output.append(sum_)
+            indices_tensor = torch.tensor(
+                indices, dtype=torch.int32, device=input_tensor.device
+            )
 
-        slices_index = torch.tensor(
-            slices_index[:-1], dtype=torch.int32, device=input_tensor.device
-        )
-        outputs = fused_slice_low_v2(
-            output_total,
-            slices_index,
-            total_output,
-        )
-        return outputs
+            output_total = fused_slice_cat(
+                input_tensor,
+                indices_tensor,
+                input_tensor.shape[0],
+                len(indices),
+                input_tensor.stride(0),
+            )
+
+            slices_index = torch.tensor(
+                slices_index[:-1], dtype=torch.int32, device=input_tensor.device
+            )
+            outputs = fused_slice_low_v2(
+                output_total,
+                slices_index,
+                total_output,
+            )
+            return output
+        else:
+            num_output = 0
+            output_ids = []
+            input_dims = []
+            output_dims = []
+            output_offsets = []
+            input_offsets = []
+            for slices in many_slices:
+                sum_ = 0
+                for slice_ in slices:
+                    start, end = slice_
+                    slice_len = end - start
+                    input_offsets.append(start)
+                    input_dims.append(slice_len)
+                    output_ids.append(num_output)
+                    output_offsets.append(sum_)
+                    sum_ += slice_len
+                output_dims.append(sum_)
+                num_output += 1
+
+            input_dims = torch.tensor(
+                input_dims, device=input_tensor.device, dtype=torch.int32
+            )
+            input_offsets = torch.tensor(
+                input_offsets, device=input_tensor.device, dtype=torch.int32
+            )
+            output_dims = torch.tensor(
+                output_dims, device=input_tensor.device, dtype=torch.int32
+            )
+            output_offsets = torch.tensor(
+                output_offsets, device=input_tensor.device, dtype=torch.int32
+            )
+            output_dims_cpu = torch.tensor(output_dims, device="cpu", dtype=torch.int32)
+            output_ids = torch.tensor(
+                output_ids, device=input_tensor.device, dtype=torch.int32
+            )
+
+            output = torch.ops.torch_mlu.emb_concat(
+                input_tensor,
+                input_offsets,
+                input_dims,
+                output_ids,
+                output_offsets,
+                output_dims,
+                output_dims_cpu,
+            )
+            return output
 
 
 class ComboSumModule(torch.nn.Module):
     def forward(self, input_list, dim):
-        print(input_list[0].shape)
-        print(input_list[1].shape)
         return fused_sum_2d(input_list, dim[0])
         if len(input_list) < 2:
             return [torch.sum(input, dim=dim) for input in input_list]

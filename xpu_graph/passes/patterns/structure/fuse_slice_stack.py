@@ -216,6 +216,7 @@ class ComboSum2d(Pattern):
 
     def process(self, graph_module: fx.GraphModule):
         changed = False
+        return False
 
         graph_module.add_submodule(
             "combo_sum",

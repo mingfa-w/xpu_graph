@@ -151,10 +151,10 @@ def fused_sum_2d(
         )
         outputs.append(output)
 
-    max_s0 = min(props.max_nram_size // (max_s1 * max_s2 * 8), max_s0)
-    max_s0 = (max_s0 + 16 - 1) // 16 * 16
     max_s1 = (max_s1 + 16 - 1) // 16 * 16
     max_s2 = (max_s2 + 16 - 1) // 16 * 16
+    max_s0 = min(props.max_nram_size // (max_s1 * max_s2 * 8), max_s0)
+    max_s0 = (max_s0 + 16 - 1) // 16 * 16
 
     # input must be contiguous
     mlu_triton_sum_2d_kernel[(props.total_cores,)](
@@ -194,9 +194,7 @@ def fused_sum_2d_fake(
         )
         outputs.append(output)
     return outputs
-
-
-"""
+'''
 inputs = [
     torch.randn((1, 4, 1), dtype=torch.float32, device="mlu:0")
 ]
@@ -206,4 +204,4 @@ output1 = [torch.sum(input, dim=[1]) for input in inputs]
 print(output1[0][0])
 print(output[0][0])
 exit()
-"""
+'''
