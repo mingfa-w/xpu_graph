@@ -324,7 +324,10 @@ def slice_test(xpu_graph_backend, func):
 class TestCatSlice:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, freeze=True, opt_level=OptLevel.level1
+            is_training=False,
+            freeze=True,
+            opt_level=OptLevel.level1,
+            vendor_compiler_config=None,
         )
 
     @pytest.mark.parametrize(
@@ -369,6 +372,8 @@ class TestSlice:
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, freeze=True, opt_level=OptLevel.level1,
+        is_training=False,
+        freeze=True,
+        opt_level=OptLevel.level1,
     )
-    slice_test(xpu_graph_backend, fn0)
+    slice_test(xpu_graph_backend, fn13)

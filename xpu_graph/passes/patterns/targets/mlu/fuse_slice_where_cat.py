@@ -6,6 +6,7 @@ import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
 from xpu_graph.config import OptLevel
+from ...utils.get_module_name import get_module_name
 from ...utils.check_ops import (
     check_cat_op,
     check_where_op,
@@ -17,6 +18,17 @@ from .triton_kernel.fused_slice_where_cat import fuse_slice_where_cat
 
 
 class FusedSliceWhereCatReplacement(nn.Module):
+    def __init__(self, slice_params):
+        super().__init__()
+        device = torch.mlu.current_device()
+        from torch._subclasses.fake_tensor import unset_fake_temporarily
+
+        with unset_fake_temporarily():
+            self.slice_param_tensor = torch.tensor(
+                slice_params, dtype=torch.int32, device="mlu:" + str(device)
+            )
+        self.slice_num = int(len(slice_params))
+
     def forward(
         self,
         where_input,
@@ -25,17 +37,14 @@ class FusedSliceWhereCatReplacement(nn.Module):
         unmatched_nodes,
         cat_dim,
         slice_dim,
-        slice_params,
     ):
-        slice_param_tensor = torch.tensor(
-            slice_params, dtype=torch.int32, device=where_input.device
-        )
-        slice_num = int(len(slice_params))
-
         cat_matched = fuse_slice_where_cat(
-            where_input, slice_input, slice_param_tensor, zeros_param[1], slice_num
+            where_input,
+            slice_input,
+            self.slice_param_tensor,
+            zeros_param[1],
+            self.slice_num,
         )
-
         if unmatched_nodes:
             unmatched_nodes = unmatched_nodes + [cat_matched]
             output = torch.cat(unmatched_nodes, dim=cat_dim)
@@ -148,9 +157,6 @@ class FusedSliceWhereCat(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         is_modified = False
-        graph_module.add_submodule(
-            "mlu_triton_slice_where_cat_replacement", FusedSliceWhereCatReplacement()
-        )
         for node in reversed(graph_module.graph.nodes):
             is_change_stack, stack_params = _is_stack_to_cat(node)
             is_match, param_tuple, cat_dim = _is_slice_where_cat(node)
@@ -192,8 +198,14 @@ class FusedSliceWhereCat(Pattern):
                         graph_module.graph.erase_node(stack_params[0])
 
                 with graph_module.graph.inserting_before(node):
+                    module_name = get_module_name(
+                        graph_module, "mlu_triton_slice_where_cat"
+                    )
+                    graph_module.add_submodule(
+                        module_name, FusedSliceWhereCatReplacement(slice_params)
+                    )
                     new_node = graph_module.graph.call_module(
-                        "mlu_triton_slice_where_cat_replacement",
+                        module_name,
                         args=(
                             where_input,
                             slice_input,
@@ -201,7 +213,6 @@ class FusedSliceWhereCat(Pattern):
                             unmatched_nodes,
                             cat_dim,
                             slice_dim,
-                            slice_params,
                         ),
                     )
 

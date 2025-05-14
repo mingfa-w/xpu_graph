@@ -3,6 +3,7 @@ from torch import nn, fx
 
 # import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
+from ..utils.get_module_name import get_module_name
 from typing import Callable
 from ..utils.check_ops import (
     check_slice_op,
@@ -69,7 +70,6 @@ class FusedSlice(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
-        graph_module.add_submodule("fused_slice", self.target_mod())
         candi_nodes = find_slice_nodes(graph_module)
 
         for src_node, nodes in candi_nodes.items():
@@ -83,9 +83,13 @@ class FusedSlice(Pattern):
                 replace_n = [n[0] for n in nodes2]
                 # output: [num, src_node[0], slice_len]
                 with graph_module.graph.inserting_before(replace_n[0]):
+                    module_name = get_module_name(graph_module, "mlu_triton_slice")
+                    graph_module.add_submodule(
+                        module_name, self.target_mod(src_node, start_indices)
+                    )
                     new_node = graph_module.graph.call_module(
-                        "fused_slice",
-                        args=(src_node, start_indices, slice_len),
+                        module_name,
+                        args=(src_node, slice_len),
                     )
                 # TODO: put in to fused_slice_module
                 for idx, n in enumerate(replace_n):
