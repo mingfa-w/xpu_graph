@@ -97,7 +97,7 @@ class FuseSliceCatSameInputModule_v2(torch.nn.Module):
             slices_index = torch.tensor(
                 slices_index[:-1], dtype=torch.int32, device=input_tensor.device
             )
-            outputs = fused_slice_low_v2(
+            output = fused_slice_low_v2(
                 output_total,
                 slices_index,
                 total_output,
@@ -135,7 +135,23 @@ class FuseSliceCatSameInputModule_v2(torch.nn.Module):
 
 class ComboSumModule(torch.nn.Module):
     def forward(self, input_list, dim):
-        return fused_sum_2d(input_list, dim[0])
+        fused_inputs = []
+        fused_indices = []
+        outputs = [None] * len(input_list)
+        for idx, input_tensor in enumerate(input_list):
+            shape = input_tensor.shape
+            if shape[1] > 64 or shape[2] > 64:
+                outputs[idx] = input_tensor.sum(dim=dim[0])
+            else:
+                fused_inputs.append(input_tensor)
+                fused_indices.append(idx)
+
+        if fused_inputs:
+            fused_results = fused_sum_2d(fused_inputs, dim[0])
+            for idx, fused_result in zip(fused_indices, fused_results):
+                outputs[idx] = fused_result
+        return outputs
+        #return fused_sum_2d(input_list, dim[0])
         if len(input_list) < 2:
             return [torch.sum(input, dim=dim) for input in input_list]
 
