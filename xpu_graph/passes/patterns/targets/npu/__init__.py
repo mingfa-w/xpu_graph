@@ -14,8 +14,10 @@ def get_all_patterns(config: XpuGraphConfig):
         PatternGroup.GROUP2: [],
     }
 
-    if os.getenv("AOTI_DIY_TRITON_KERNEL_SUPPORTED",0) == 0:
-        logger.warning("AOTI on Ascend NPU do not support DIY triton kernel, npu patterns will be ignored!")
+    if config.export_mode:
+        logger.warning(
+            "AOTI on Ascend NPU do not support DIY triton kernel, npu patterns will be ignored!"
+        )
         return patterns
 
     for _, module_name, _ in pkgutil.iter_modules(__path__):

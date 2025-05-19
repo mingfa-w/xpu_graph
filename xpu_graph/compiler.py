@@ -7,13 +7,7 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .passes.pass_manager import PassManager
 from .config import XpuGraphConfig, Target, OptLevel
-from .utils import (
-    logger,
-    setup_logger,
-    local_logger,
-    NodesStatistics,
-    GitLikeDiffer
-)
+from .utils import logger, setup_logger, local_logger, NodesStatistics, GitLikeDiffer
 from .cache import XpuGraphCache, default_cache, SerializeWrapper
 from .fx_utils import FxStage, dispatch_graph, decompose_for_inductor
 import logging
@@ -84,7 +78,9 @@ class XpuGraph:
 
         self._set_context()
 
-    def __call__(self, dynamo_gm: torch.fx.GraphModule, example_inputs, *, graph_only=False):
+    def __call__(
+        self, dynamo_gm: torch.fx.GraphModule, example_inputs, *args, **Kwargs
+    ):
         def _compiler(gm, fake_inputs, stage: FxStage):
 
             nodes_statistics = NodesStatistics()
@@ -124,7 +120,7 @@ class XpuGraph:
 
                 logger.info(f"node statistic: {str(nodes_statistics)}")
 
-                if graph_only:
+                if self._config.export_mode:
                     return xpu_compiled
 
                 if stage != FxStage.pregrad and self._config.vendor_compiler_config:
@@ -193,9 +189,19 @@ class XpuGraph:
 
         return xpu_gm
 
-    def aot_export(self, mod: torch.nn.Module, example_args, example_kwargs=None, *, package_path=None, **kwargs):
+    def aot_export(
+        self,
+        mod: torch.nn.Module,
+        example_args,
+        example_kwargs=None,
+        package_path=None,
+        *args,
+        **kwargs,
+    ):
         if not torch.__version__.startswith("2.6"):
-            logger.error("AOT export functionality is only available on torch 2.6 for now")
+            logger.error(
+                "AOT export functionality is only available on torch 2.6 for now"
+            )
             raise NotImplemented
         if self._config.is_training:
             logger.error("AOT export functionality is only available for inference")
@@ -207,13 +213,19 @@ class XpuGraph:
         exported_prog = torch.export.export(mod, example_args, example_kwargs)
         logger.info("export module complete")
 
-        flat_inputs = exported_prog._graph_module_flat_inputs(*exported_prog.example_inputs)
-        optimized_gm = self.__call__(exported_prog._graph_module, flat_inputs, graph_only=True)
+        flat_inputs = exported_prog._graph_module_flat_inputs(
+            *exported_prog.example_inputs
+        )
+        optimized_gm = self.__call__(exported_prog._graph_module, flat_inputs)
         exported_prog._graph_module = optimized_gm
 
         logger.info("aot_inductor start...")
-        logger.warning("AOT export ignores vendor_compiler configs, use default aot_inductor settings")
-        dump_path = torch._inductor.aoti_compile_and_package(exported_prog, package_path=package_path)
+        logger.warning(
+            "AOT export ignores vendor_compiler configs, use default aot_inductor settings"
+        )
+        dump_path = torch._inductor.aoti_compile_and_package(
+            exported_prog, package_path=package_path
+        )
         logger.info("aot_inductor complete")
         logger.info(f"after aot_inductor, saving optimized module to {dump_path}")
         return dump_path
