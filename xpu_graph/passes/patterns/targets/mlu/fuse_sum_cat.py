@@ -10,6 +10,7 @@ from ...utils.check_ops import (
     check_slice_op,
     check_meta_2d,
 )
+from ...utils.submodule_manager import register_new_submodule
 from .triton_kernel.fused_sum_cat import (
     fuse_sum_cat_2d,
     fuse_sum_cat_3d,
@@ -73,40 +74,49 @@ class ConcatenateSumOperation1(nn.Module):
 
 
 class SliceSumCatOperation(nn.Module):
-    def forward(self, input, slice_param):
+    def __init__(self, slice_param):
+        """
+        Args:
+            slice_param (list of tuples): A list of slice indices, where each tuple
+                                          contains (start_idx, end_idx) for slicing.
+        """
+        super().__init__()
+        device = torch.mlu.current_device()
+
+        slice_ = []
+        for param in slice_param:
+            slice_ += [param[0], param[1]]
+        self.slice_tensor = torch.tensor(
+            slice_, dtype=torch.int32, device="mlu:" + str(device)
+        )
+
+        self.output_num = len(slice_param)
+        self.start = min([s[0] for s in slice_param])
+        self.end = max([s[1] for s in slice_param])
+        self.slice_param_list = slice_param
+
+    def forward(self, input):
         """
         Forward pass for the SliceSumCatOperation.
 
         Args:
             input (torch.Tensor): The input tensor of shape (batch, row, col).
-            slice_param (list of tuples): A list of slice indices, where each tuple
-                                          contains (start_idx, end_idx) for slicing.
 
         Returns:
             torch.Tensor: The output tensor of shape (batch, len(slice_param) * col). The processed tensor after slice -> sum -> cat operations.
         """
         batch, row, col = input.shape
-        start = min([s[0] for s in slice_param])
-        end = max([s[1] for s in slice_param])
         # Ensure the slicing range does not exceed 1024 for computational efficiency
-        if (end - start) > 1024:
+        if (self.end - self.start) > 1024:
             target_tensors = []
-            for slice_arg in slice_param:
+            for slice_arg in self.slice_param_list:
                 slice_tensor = input[:, slice_arg[0] : slice_arg[1], :]
                 sum_tensor = torch.sum(slice_tensor, dim=[1])
                 target_tensors.append(sum_tensor)
             return torch.cat(target_tensors, axis=-1)
         else:
-            processor_count = torch.mlu.get_device_properties(
-                torch.mlu.current_device()
-            ).multi_processor_count
-            slice_ = []
-            for param in slice_param:
-                slice_ += [param[0], param[1]]
-            slice_tensor = torch.tensor(slice_, dtype=torch.int32, device=input.device)
-            output_num = len(slice_param)
             return fuse_slice_sum_cat(
-                input, slice_tensor, processor_count, output_num, end
+                input, self.slice_tensor, self.output_num, self.end
             )
 
 
@@ -199,15 +209,21 @@ def find_slice_sum_cat(gm: fx.GraphModule):
         if not is_cat:
             continue
         ori_cat_input = node.args[0]
-        is_match, range_, src_node, args = match_slice_sum_cat_pattern(
+        is_match, range_, src_node, slice_params = match_slice_sum_cat_pattern(
             ori_cat_input, slice_dict
         )
         if not is_match:
             continue
         with gm.graph.inserting_before(node):
+            module_name = register_new_submodule(
+                gm,
+                "mlu_triton_slice_sum_cat",
+                SliceSumCatOperation,
+                args=(slice_params,),
+            )
             new_node = gm.graph.call_module(
-                "mlu_triton_fused_slice_sum_cat",
-                args=(src_node, args),
+                module_name,
+                args=(src_node,),
             )
             new_cat_input = (
                 ori_cat_input[: range_[0]] + [new_node] + ori_cat_input[range_[1] + 1 :]
@@ -229,160 +245,14 @@ def find_slice_sum_cat(gm: fx.GraphModule):
     return changed
 
 
-def _validate_sum_concat(gm, node, source_nodes, sum_dims, keep_dims, cat_axis):
-    if len(source_nodes) < 3:
-        return False, None
-
-    batch_sizes = [n.meta["val"].shape[0] for n in source_nodes]
-    if not all(size == batch_sizes[0] for size in batch_sizes):
-        return False, None
-
-    tensor_shapes = [n.meta["val"].shape for n in source_nodes]
-    dims = [len(shape) for shape in tensor_shapes]
-
-    if not all(dim == dims[0] for dim in dims) or not 1 < dims[0] <= 3:
-        return False, None
-
-    is_2d = dims[0] == 2
-    if not (all(axis == sum_dims[0] for axis in sum_dims) and sum_dims[0] == [1]):
-        return False, None
-
-    if not all(keep_dim is True for keep_dim in keep_dims):
-        return False, None
-
-    has_keep_dims = bool(keep_dims)
-    is_cat, _ = check_cat_op(node)
-
-    sum_mode = 0
-    concat_mode = 0
-    if is_cat:
-        if is_2d and has_keep_dims:
-            pass
-        elif is_2d and not has_keep_dims and cat_axis == -1:
-            concat_mode = 1
-        elif not is_2d and not has_keep_dims and cat_axis == -1:
-            sum_mode = 1
-        else:
-            return False, None
-    else:  # stack
-        if is_2d and not has_keep_dims:
-            concat_mode = 1
-            cat_axis = 0
-        else:
-            return False, None
-
-    if sum_mode == 0:
-        with gm.graph.inserting_before(node):
-            new_node = gm.graph.call_module(
-                "mlu_triton_fused_cat_sum_1_replacement",
-                args=(
-                    source_nodes,
-                    sum_dims[0],
-                    concat_mode,
-                    has_keep_dims,
-                    cat_axis,
-                    is_cat,
-                ),
-            )
-        return True, new_node
-    else:
-        with gm.graph.inserting_before(node):
-            new_node = gm.graph.call_module(
-                "mlu_triton_fused_cat_sum_2_replacement",
-                args=(
-                    source_nodes,
-                    sum_dims[0],
-                    cat_axis,
-                ),
-            )
-        return True, new_node
-    return False, None
-
-
-def process_match_sum_cat(gm: fx.GraphModule):
-    changed = False
-    for node in reversed(gm.graph.nodes):
-        is_cat, cat_axis = check_cat_op(node)
-        if is_cat or check_stack_op(node):
-            is_replace = False
-            concat_input = []
-            if is_cat:
-                if node.meta == {}:
-                    continue
-                if len(node.meta["val"].shape) - 1 == cat_axis:
-                    cat_axis = -1
-            if len(node.args[0]) > 2:
-                n_list = []
-                sum_dims = []
-                source_nodes = []
-                keep_dims = []
-                for n in node.args[0]:
-                    if check_sum_op(n):
-                        n_list.append(n)
-                        source_nodes.append(n.args[0])
-                        sum_dims.append(n.args[1])
-                        # keepdim
-                        if len(n.args) == 3:
-                            keep_dims.append(n.args[2])
-                    else:
-                        match_, new_node = _validate_sum_concat(
-                            gm, node, source_nodes, sum_dims, keep_dims, cat_axis
-                        )
-                        if match_:
-                            is_replace = True
-                            concat_input.append(new_node)
-                        else:
-                            concat_input += n_list
-                        concat_input.append(n)
-                        n_list = []
-                        sum_dims = []
-                        source_nodes = []
-                        keep_dims = []
-                match_, new_node = _validate_sum_concat(
-                    gm, node, source_nodes, sum_dims, keep_dims, cat_axis
-                )
-                if match_:
-                    is_replace = True
-                    concat_input.append(new_node)
-                else:
-                    concat_input += n_list
-
-            if is_replace is True:
-                changed = True
-                if len(concat_input) == 1:
-                    node.replace_all_uses_with(concat_input[0])
-                else:
-                    with gm.graph.inserting_before(node):
-                        concat_node = gm.graph.create_node(
-                            op="call_function",
-                            target=torch.ops.aten.cat.default,
-                            args=(concat_input, cat_axis),
-                            name=node.name + "_1",
-                        )
-                    node.replace_all_uses_with(concat_node)
-                gm.graph.erase_node(node)
-    return changed
-
-
 class FusedCatSum(Pattern):
     _opt_level = OptLevel.level2
 
     def process(self, gm: fx.GraphModule):
         changed = False
-        gm.add_submodule("mlu_triton_fused_slice_sum_cat", SliceSumCatOperation())
         changed1 = True
         while changed1:
             changed1 = find_slice_sum_cat(gm)
             changed = changed | changed1
-
-        return changed
-        gm.add_submodule(
-            "mlu_triton_fused_cat_sum_1_replacement", ConcatenateSumOperation1()
-        )
-        gm.add_submodule(
-            "mlu_triton_fused_cat_sum_2_replacement", ConcatenateSumOperation2()
-        )
-
-        changed = changed | process_match_sum_cat(gm)
 
         return changed
