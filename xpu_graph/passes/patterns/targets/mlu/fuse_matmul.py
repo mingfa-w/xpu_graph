@@ -139,10 +139,14 @@ class MMParam:
             return True
         return False
 
-
 class FusedMatMulReplacement(nn.Module):
     def forward(self, inputs, input_shape, weight, weight_shape, trans_b, bias, act):
         import torch_mlu_ops
+
+        #TODO(jyj): waiting for tmo version update
+        tmp_act = act
+        if act == "sigmoid":
+            tmp_act = "none"
 
         # input last dim must be contiguous.
         if inputs.stride()[-1] != 1:
@@ -164,19 +168,18 @@ class FusedMatMulReplacement(nn.Module):
                     weight,
                     bias,
                     None,
-                    act,
+                    tmp_act,
                     1.0,
                     0.0,
                     False,
                     False,
                     trans_b=trans_b,
                 )
+                if act == "sigmoid":
+                    return torch.sigmoid(output)
                 return output
-        #TODO(jyj): waiting for tmo version update
-        tmp_act = act
-        if act == "sigmoid":
-            tmp_act = "none"
-        # bias 2d or None
+
+       # bias 2d or None
         output = torch_mlu_ops.matmul(
             inputs,
             weight,

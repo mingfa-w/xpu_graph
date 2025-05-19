@@ -33,9 +33,11 @@ configs = [
 
 @triton.jit
 def relu(x):
-    return tl.maximum(x, 0.0)
+    zero = 0.0
+    zero = zero.to(x.dtype)
+    return tl.maximum(x, zero)
 
-@triton.autotune(
+@libentry.libtuner(
     configs=configs,
     prune_configs_by={"early_config_prune": do_config_prune},
     key=['M', 'K1', 'N1', "N2"],

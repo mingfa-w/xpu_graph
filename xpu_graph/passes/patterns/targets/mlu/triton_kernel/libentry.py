@@ -3,6 +3,8 @@
 # Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
 # Copyright (c) FlagOpen contributors
 
+import functools
+import os
 import inspect
 import sqlite3
 import threading
@@ -23,6 +25,22 @@ ATTRS = {
 }
 version = triton.__version__.split(".")
 major_version, minor_version = eval(version[0]), eval(version[1])
+
+@functools.lru_cache(maxsize=None)  # this is the same as functools.cache in Python 3.9+
+def cache_dir_path() -> Path:
+    """Return the cache directory for generated files in flaggems."""
+    _cache_dir = os.environ.get("FLAGGEMS_CACHE_DIR")
+    if _cache_dir is None:
+        _cache_dir = Path.home() / ".flaggems"
+    else:
+        _cache_dir = Path(_cache_dir)
+    return _cache_dir
+
+def cache_dir() -> Path:
+    """Return cache directory for generated files in flaggems. Create it if it does not exist."""
+    _cache_dir = cache_dir_path()
+    os.makedirs(_cache_dir, exist_ok=True)
+    return _cache_dir
 
 def config_cache_dir() -> Path:
     _config_cache_dir = cache_dir() / "config_cache"

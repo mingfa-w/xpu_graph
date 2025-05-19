@@ -10,8 +10,7 @@ from . import libentry
 from .get_mlu_devinfo import get_device_properties
 
 _devprop = get_device_properties()
-#TOTAL_CORE_NUM = _devprop.total_cores
-TOTAL_CORE_NUM = 4
+TOTAL_CORE_NUM = _devprop.total_cores
 
 def do_config_prune(configs, named_args, **kwargs):
     M = named_args["M"]
@@ -44,7 +43,7 @@ def relu(x):
     zero = zero.to(x.dtype)
     return tl.maximum(x, zero)
 
-@triton.autotune(
+@libentry.libtuner(
     configs=configs,
     prune_configs_by={"early_config_prune": do_config_prune},
     key=['M', 'K1', 'N1', "N2", "N3"],
@@ -185,7 +184,7 @@ configs1 = [
                   num_warps=1) for BM in range(1, 6)
 ]
 
-@triton.autotune(
+@libentry.libtuner(
     configs=configs1,
     key=['M', 'K1', 'N1', "N2", "N3"],
 )
