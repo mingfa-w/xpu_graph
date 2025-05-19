@@ -198,7 +198,10 @@ class XpuGraph:
         *args,
         **kwargs,
     ):
-        if not torch.__version__.startswith("2.6"):
+        from packaging import version
+
+        torch_version = version.parse(torch.__version__[:5])
+        if not torch_version < version.parse("2.6.0"):
             logger.error(
                 "AOT export functionality is only available on torch 2.6 for now"
             )
