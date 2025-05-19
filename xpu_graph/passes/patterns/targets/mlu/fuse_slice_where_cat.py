@@ -6,7 +6,7 @@ import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
 from xpu_graph.config import OptLevel
-from ...utils.get_module_name import get_module_name
+from ...utils.submodule_manager import register_new_submodule
 from ...utils.check_ops import (
     check_cat_op,
     check_where_op,
@@ -21,12 +21,9 @@ class FusedSliceWhereCatReplacement(nn.Module):
     def __init__(self, slice_params):
         super().__init__()
         device = torch.mlu.current_device()
-        from torch._subclasses.fake_tensor import unset_fake_temporarily
-
-        with unset_fake_temporarily():
-            self.slice_param_tensor = torch.tensor(
-                slice_params, dtype=torch.int32, device="mlu:" + str(device)
-            )
+        self.slice_param_tensor = torch.tensor(
+            slice_params, dtype=torch.int32, device="mlu:" + str(device)
+        )
         self.slice_num = int(len(slice_params))
 
     def forward(
@@ -198,11 +195,11 @@ class FusedSliceWhereCat(Pattern):
                         graph_module.graph.erase_node(stack_params[0])
 
                 with graph_module.graph.inserting_before(node):
-                    module_name = get_module_name(
-                        graph_module, "mlu_triton_slice_where_cat"
-                    )
-                    graph_module.add_submodule(
-                        module_name, FusedSliceWhereCatReplacement(slice_params)
+                    module_name = register_new_submodule(
+                        graph_module,
+                        "mlu_triton_slice_where_cat",
+                        FusedSliceWhereCatReplacement,
+                        args=(slice_params,),
                     )
                     new_node = graph_module.graph.call_module(
                         module_name,

@@ -21,15 +21,12 @@ class RMSNormModule(torch.nn.Module):
 
 
 class FuseSliceModule(torch.nn.Module):
-    def __init__(self, src_node, slices_index):
+    def __init__(self, slices_index):
         super().__init__()
         device = torch.mlu.current_device()
-        from torch._subclasses.fake_tensor import unset_fake_temporarily
-
-        with unset_fake_temporarily():
-            self.slices_index = torch.tensor(
-                slices_index, dtype=torch.int32, device="mlu:" + str(device)
-            )
+        self.slices_index = torch.tensor(
+            slices_index, dtype=torch.int32, device="mlu:" + str(device)
+        )
 
     def forward(self, input_tensor, slice_len):
         output = fused_slice_low(

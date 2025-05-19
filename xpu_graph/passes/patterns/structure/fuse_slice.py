@@ -3,7 +3,7 @@ from torch import nn, fx
 
 # import torch_mlu
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
-from ..utils.get_module_name import get_module_name
+from ..utils.submodule_manager import register_new_submodule
 from typing import Callable
 from ..utils.check_ops import (
     check_slice_op,
@@ -83,9 +83,11 @@ class FusedSlice(Pattern):
                 replace_n = [n[0] for n in nodes2]
                 # output: [num, src_node[0], slice_len]
                 with graph_module.graph.inserting_before(replace_n[0]):
-                    module_name = get_module_name(graph_module, "mlu_triton_slice")
-                    graph_module.add_submodule(
-                        module_name, self.target_mod(src_node, start_indices)
+                    module_name = register_new_submodule(
+                        graph_module,
+                        "mlu_triton_slice",
+                        self.target_mod,
+                        args=(start_indices,),
                     )
                     new_node = graph_module.graph.call_module(
                         module_name,

@@ -10,7 +10,7 @@ from ...utils.check_ops import (
     check_slice_op,
     check_meta_2d,
 )
-from ...utils.get_module_name import get_module_name
+from ...utils.submodule_manager import register_new_submodule
 from .triton_kernel.fused_sum_cat import (
     fuse_sum_cat_2d,
     fuse_sum_cat_3d,
@@ -82,15 +82,14 @@ class SliceSumCatOperation(nn.Module):
         """
         super().__init__()
         device = torch.mlu.current_device()
-        from torch._subclasses.fake_tensor import unset_fake_temporarily
 
-        with unset_fake_temporarily():
-            slice_ = []
-            for param in slice_param:
-                slice_ += [param[0], param[1]]
-            self.slice_tensor = torch.tensor(
-                slice_, dtype=torch.int32, device="mlu:" + str(device)
-            )
+        slice_ = []
+        for param in slice_param:
+            slice_ += [param[0], param[1]]
+        self.slice_tensor = torch.tensor(
+            slice_, dtype=torch.int32, device="mlu:" + str(device)
+        )
+
         self.output_num = len(slice_param)
         self.start = min([s[0] for s in slice_param])
         self.end = max([s[1] for s in slice_param])
@@ -210,14 +209,18 @@ def find_slice_sum_cat(gm: fx.GraphModule):
         if not is_cat:
             continue
         ori_cat_input = node.args[0]
-        is_match, range_, src_node, args = match_slice_sum_cat_pattern(
+        is_match, range_, src_node, slice_params = match_slice_sum_cat_pattern(
             ori_cat_input, slice_dict
         )
         if not is_match:
             continue
         with gm.graph.inserting_before(node):
-            module_name = get_module_name(gm, "mlu_triton_slice_sum_cat")
-            gm.add_submodule(module_name, SliceSumCatOperation(args))
+            module_name = register_new_submodule(
+                gm,
+                "mlu_triton_slice_sum_cat",
+                SliceSumCatOperation,
+                args=(slice_params,),
+            )
             new_node = gm.graph.call_module(
                 module_name,
                 args=(src_node,),
