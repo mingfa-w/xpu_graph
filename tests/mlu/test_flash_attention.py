@@ -2,6 +2,7 @@ import math
 import pytest
 
 import torch
+import torch.nn.functional as F
 import xpu_graph
 
 from xpu_graph.config import OptLevel
@@ -323,6 +324,36 @@ def _sfdp_pattern_transformer_3(query, key, value, attention_mask):
     attn_output = attention_scores @ value
     return attn_output
 
+def model_a_test1(query, key, value, tao, mul_14, use_mask=False, mask=None):
+    # reshape & permute
+    query = query.view(112, 2, 2, 32).permute(0, 2, 1, 3)  # [112, 2, 2, 32]
+    query = query / 5.656854249492381
+    query = query.reshape(224, 2, 32)
+
+    key = key.view(112, 48, 2, 32).permute(0, 2, 1, 3).reshape(224,32,48)
+
+    # batch matmul 1
+    attn_score = torch.matmul(query, key)  # [224, 48, 176]
+    attn_score = attn_score.view(112,2,2,48)
+
+    # tao 缩放
+    attn_score = attn_score / tao
+    #[112, 2, 2, 48]
+    attn_score = attn_score.to(dtype=torch.float32)
+    attn_score = attn_score - mul_14  # 减去预处理项
+
+    # softmax & cast back
+    weights = F.softmax(attn_score, dim=-1).to(dtype=torch.float16)
+    weights = weights.view(224, 2, 48)
+
+    value = value.view(112,48,2,128).permute(0, 2, 1, 3).reshape(224,48,128)
+    # batch matmul 2
+    output = torch.matmul(weights, value)  # [224, 48, 128]
+    output = output.view(112, 2, 2, 128).permute(0, 2, 1, 3).contiguous().view(224, 256)
+
+    return output
+
+
 
 def fa_test(xpu_graph_backend, func):
     head_size = 64
@@ -402,7 +433,7 @@ def fa_test(xpu_graph_backend, func):
 class TestFA:
     def setup_class(self):
         self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, freeze=False, opt_level=OptLevel.level2
+            is_training=False, freeze=False, opt_level=OptLevel.level2, use_cache=False
         )
 
     @pytest.mark.parametrize(
@@ -434,11 +465,67 @@ class TestFA:
             fa_test(self.xpu_graph_backend, pattern_func)
         assert "Pattern.FusedFlashAttention changed graph" in caplog.text
 
+def fa_test1(xpu_graph_backend, func):
+    device = torch.device("mlu:2")
+    batch=112
+    sequence = 2
+    head_num=2
+    head_size=32
+    kv_seq=48
+    v_head_size=128
+
+    qk_hidden_dim = head_num * head_size  # 64
+    v_hidden_dim = head_num * v_head_size  # 256
+    total_flatten_tokens = batch * sequence
+
+    # 构造输入张量
+    query = torch.randn(total_flatten_tokens, qk_hidden_dim, dtype=torch.float16, device=device)
+    key = torch.randn(batch*kv_seq, qk_hidden_dim, dtype=torch.float16, device=device)
+    value = torch.randn(batch*kv_seq, v_hidden_dim, dtype=torch.float16, device=device)
+    tao = torch.full((1,), 2.0, dtype=torch.float16, device=device)
+    mul_14 = torch.randn(batch, 1, 1, kv_seq, dtype=torch.float32, device=device)
+    mask = torch.ones(batch, kv_seq, head_num * head_size * 2, dtype=torch.float32, device=device)  # e.g. 48 × 64
+    '''
+    query = torch.randn(batch*sequence, 64, dtype=torch.float16, device=device)
+    key = torch.randn(5376, 64,dtype=torch.float16, device=device)
+    value = torch.randn(5376,256, dtype=torch.float16, device=device)
+    tao = torch.full((1,), 2.0, dtype=torch.float16, device=device)
+    mul_14 = torch.randn(batch, 1, 1, 48, dtype=torch.float32, device=device)
+    mask = torch.ones(batch, 48, 176, dtype=torch.float32, device=device)
+    '''
+
+    res1 = func(query, key, value, tao, mul_14, use_mask=True, mask=mask)
+    compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
+    res = compiled(query, key, value, tao, mul_14, use_mask=True, mask=mask)
+
+    assertTensorsEqual(
+        res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True
+    )
+
+class TestFA1:
+    def setup_class(self):
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(
+            is_training=False, freeze=False, opt_level=OptLevel.level2, use_cache=False
+        )
+
+    @pytest.mark.parametrize(
+        "pattern_func",
+        [
+            model_a_test1,
+        ],
+    )
+    def test_sfdp_patterns(self, caplog, pattern_func):
+        with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
+            fa_test1(self.xpu_graph_backend, pattern_func)
+        assert "Pattern.FusedFlashAttention changed graph" in caplog.text
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, freeze=False, debug=False, opt_level=OptLevel.level2
+        is_training=False, freeze=False, debug=False, opt_level=OptLevel.level2, vendor_compiler_config=None, use_cache=False
     )
+    #fa_test(xpu_graph_backend, _sfdp_pattern_1)
+    fa_test1(xpu_graph_backend, model_a_test1)
+    '''
     fa_test(xpu_graph_backend, _sfdp_pattern_1)
     fa_test(xpu_graph_backend, _sfdp_pattern_1_1)
     fa_test(xpu_graph_backend, _sfdp_pattern_2)
@@ -458,3 +545,4 @@ if __name__ == "__main__":
     fa_test(xpu_graph_backend, _sfdp_pattern_transformer_2)
     fa_test(xpu_graph_backend, _sfdp_pattern_transformer_3)
     fa_test(xpu_graph_backend, _sfdp_pattern_6_1)
+    '''
