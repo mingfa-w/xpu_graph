@@ -485,14 +485,6 @@ def fa_test1(xpu_graph_backend, func):
     tao = torch.full((1,), 2.0, dtype=torch.float16, device=device)
     mul_14 = torch.randn(batch, 1, 1, kv_seq, dtype=torch.float32, device=device)
     mask = torch.ones(batch, kv_seq, head_num * head_size * 2, dtype=torch.float32, device=device)  # e.g. 48 × 64
-    '''
-    query = torch.randn(batch*sequence, 64, dtype=torch.float16, device=device)
-    key = torch.randn(5376, 64,dtype=torch.float16, device=device)
-    value = torch.randn(5376,256, dtype=torch.float16, device=device)
-    tao = torch.full((1,), 2.0, dtype=torch.float16, device=device)
-    mul_14 = torch.randn(batch, 1, 1, 48, dtype=torch.float32, device=device)
-    mask = torch.ones(batch, 48, 176, dtype=torch.float32, device=device)
-    '''
 
     res1 = func(query, key, value, tao, mul_14, use_mask=True, mask=mask)
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
