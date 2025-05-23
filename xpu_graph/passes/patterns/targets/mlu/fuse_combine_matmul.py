@@ -6,6 +6,7 @@ import torch_mlu
 from xpu_graph.utils import logger
 from xpu_graph.config import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern, PatternGroup
+from ...utils.submodule_manager import register_new_submodule
 from ...utils.check_ops import (
     check_mm_op,
     check_add_op,
@@ -18,6 +19,7 @@ from ...utils.check_ops import (
     # get_shape,
 )
 import operator
+from .triton_kernel.fused_groupgemm import fused_grouped_gemm
 
 TensorShape = Union[torch.Size, Tuple[int, ...]]
 NodeType = fx.Node
@@ -182,12 +184,20 @@ def all_same_tensor(tensor_list):
 
 
 class FusedCombineBmm(nn.Module):
-    def forward(self, input_list, weight_list, bias_list, act: str):
+    def __init__(self, batch_sizes):
+        super().__init__()
+        device = torch.mlu.current_device()
+        self.batch_tensor = torch.tensor(
+            batch_sizes, dtype=torch.int64, device="cpu"
+        )
+
+    def forward(self, input_list, weight_list, bias_list, batch_sizes, act: str):
         output = None
+        #print("#############len(input_list[0].shape): ", len(input_list[0].shape))
         if len(input_list[0].shape) == 3:
             output = self.forward_bmm(input_list, weight_list, bias_list, act)
         else:
-            output = self.forward_mm(input_list, weight_list, bias_list, act)
+            output = self.forward_mm(input_list, weight_list, bias_list, batch_sizes, act)
 
         bias = bias_list[0]
         if bias is None:
@@ -227,21 +237,35 @@ class FusedCombineBmm(nn.Module):
         ).view(T, B, M, N)
         return output
 
-    def forward_mm(self, input_list, weight_list, bias_list, act: str):
-        if all_same_tensor(input_list):
-            input = input_list[0]
-            input_batch = input.unsqueeze(0).expand(
-                len(input_list), input.shape[0], input.shape[1]
-            )
-        else:
-            input_batch = torch.stack(input_list, dim=0)
+    def forward_mm(self, input_list, weight_list, bias_list, batch_sizes, act: str):
+        #if all_same_tensor(input_list):
+        #    input = input_list[0]
+        #    input_batch = input.unsqueeze(0).expand(
+        #        len(input_list), input.shape[0], input.shape[1]
+        #    )
+        #else:
+        #    input_batch = torch.stack(input_list, dim=0)
+        input_batch = torch.cat(input_list, dim=0)
         weight_batch = torch.stack(weight_list, dim=0)
-        B, K, N = weight_batch.shape
+        #B, K, N = weight_batch.shape
 
-        output = torch.bmm(
-            input_batch,
-            weight_batch,  # [B, M, N]
+        batch_sizes_tensor = torch.tensor(
+            batch_sizes, dtype=torch.int64, device="cpu",
         )
+        #output_batch = fused_grouped_gemm(input_batch, weight_batch, batch_sizes_tensor, trans_b=False)
+        output_batch = fused_grouped_gemm(input_batch, weight_batch, self.batch_tensor, trans_b=False)
+        output = output_batch.view(len(batch_sizes), batch_sizes[0], -1)
+        #output = torch.stack(output_list, dim=0)
+        #for i in range(len(tmp)):
+        #    print("######tmp[i].shape: ", tmp[i].shape)
+        #print("")
+        #print("")
+
+        #input_batch = torch.stack(input_list, dim=0)
+        #output = torch.bmm(
+        #    input_batch,
+        #    weight_batch,  # [B, M, N]
+        #)
         return output
 
         """
@@ -288,15 +312,23 @@ def replace_node(graph_module, nodes):
     new_weight = [n.input2 for n in nodes]
     new_bias = [n.bias for n in nodes]
     act = nodes[0].act
+    batch_sizes = [new_input[0].meta["val"].shape[0]] * len(new_input)
 
     if len(new_weight) < COMBINE_LEN:
         return
     with graph_module.graph.inserting_after(
         find_last_node_in_list(graph_module, new_input + new_weight + new_bias)
     ):
-        new_node = graph_module.graph.call_module(
+        module_name = register_new_submodule(
+            graph_module,
             "fused_combine_bmm",
-            args=(new_input, new_weight, new_bias, act),
+            FusedCombineBmm,
+            args=(batch_sizes,),
+        )
+        new_node = graph_module.graph.call_module(
+            module_name,
+            #"fused_combine_bmm",
+            args=(new_input, new_weight, new_bias, batch_sizes, act),
         )
     with graph_module.graph.inserting_after(new_node):
         for idx, n in enumerate(nodes):
@@ -372,8 +404,9 @@ class FusedCombineMatMul(Pattern):
 
     def process(self, graph_module: fx.GraphModule) -> bool:
         changed = False
+        print(graph_module.graph)
 
-        graph_module.add_submodule("fused_combine_bmm", FusedCombineBmm())
+        #graph_module.add_submodule("fused_combine_bmm", FusedCombineBmm())
         target_module = [
             "mlu_tmo_fused_bmm_replacement",
             torch.ops.aten.mm.default,
@@ -398,10 +431,10 @@ class FusedCombineMatMul(Pattern):
             if len(candidates) < COMBINE_LEN:
                 continue
             changed = changed | combine_matmul(graph_module, candidates)
-            graph_module.graph.lint()
-            graph_module.recompile()
-        if changed:
-            print("after")
-            print(graph_module.graph)
+            #graph_module.graph.lint()
+            #graph_module.recompile()
+        #if changed:
+        #    print("after")
+        #    print(graph_module.graph)
 
         return changed
