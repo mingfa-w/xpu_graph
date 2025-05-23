@@ -7,13 +7,7 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .passes.pass_manager import PassManager
 from .config import XpuGraphConfig, Target, OptLevel
-from .utils import (
-    logger,
-    setup_logger,
-    local_logger,
-    NodesStatistics,
-    GitLikeDiffer
-)
+from .utils import logger, setup_logger, local_logger, NodesStatistics, GitLikeDiffer
 from .cache import XpuGraphCache, default_cache, SerializeWrapper
 from .fx_utils import FxStage, dispatch_graph, decompose_for_inductor
 import logging

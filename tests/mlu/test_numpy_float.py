@@ -32,13 +32,13 @@ def compare_test(xpugraph_backend):
 
 class TestNumpyFloat:
     def setup_class(self):
-        self.xpugraph_backend = xpu_graph.mlu_compiler(is_training=False, debug=True)
+        self.xpugraph_backend = xpu_graph.mlu_compiler(is_training=False, constant_folding=True, debug=True)
 
     def test_numpy_float(self):
         compare_test(self.xpugraph_backend)
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, debug=True)
-
+    compare_test("inductor")
+    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, constant_folding=True, debug=True)
     compare_test(xpu_graph_backend)
