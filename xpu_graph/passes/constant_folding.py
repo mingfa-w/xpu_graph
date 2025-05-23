@@ -19,11 +19,12 @@ def _no_folding(node: fx.Node):
 
 class ConstantFolding(Optimizer):
 
-    def __init__(self):
+    def __init__(self, freezing):
         super().__init__()
+        self.freezing = freezing
 
     def _all_input_constant(self, node: fx.Node):
-        return all(is_constant(arg) for arg in node.args)
+        return all(is_constant(arg, self.freezing) for arg in node.args)
 
     def process(self, gm: torch.fx.GraphModule):
         changed = False
