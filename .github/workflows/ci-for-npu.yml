@@ -12,7 +12,6 @@ on:
   push:
     branches:
       - develop
-      - master
     paths_ignore:
       - 'xpu_graph/backend/mlu.py'
       - 'xpu_graph/passes/patterns/targets/mlu/'
