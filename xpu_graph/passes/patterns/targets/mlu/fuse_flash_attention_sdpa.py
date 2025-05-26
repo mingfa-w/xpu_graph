@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 from xpu_graph import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
+from ...utils.submodule_manager import register_new_submodule
 from xpu_graph.utils import logger
 import torch.nn.functional as F
 from ...utils.check_ops import (
@@ -86,8 +87,7 @@ def sdpa_forward(
     key: torch.Tensor,
     value: torch.Tensor,
     attention_mask: torch.Tensor,
-    scale_factor: torch.Tensor,
-    is_division: bool,
+    softmax_scale: float,
     is_add: bool,
     output_shape: List[int],
     output_dtype: torch.dtype,
@@ -117,9 +117,6 @@ def sdpa_forward(
             attention_mask, (batch, head_num_q, seq_q, seq_kv)
         ).contiguous()
 
-    scale_factor = scale_factor.item()
-    softmax_scale = 1.0 / scale_factor if is_division else scale_factor
-
     query = query.view(batch, head_num_q, seq_q, head_size_qk)
     key = key.view(batch, -1, seq_kv, head_size_qk)
     value = value.view(batch, key.shape[1], seq_kv, -1)
@@ -147,8 +144,7 @@ def sdpa_forward_fake(
     key: torch.Tensor,
     value: torch.Tensor,
     attention_mask: torch.Tensor,
-    scale_factor: torch.Tensor,
-    is_division: bool,
+    softmax_scale: float,
     is_add: bool,
     output_shape: List[int],
     output_dtype: torch.dtype,
@@ -162,8 +158,9 @@ def sdpa_forward_fake(
 
 
 class ScaledDotProductAttention(nn.Module):
-    def __init__(self):
+    def __init__(self, scale_factor, is_division):
         super().__init__()
+        self.softmax_scale = 1.0 / scale_factor if is_division else scale_factor
 
     def forward(
         self,
@@ -178,19 +175,14 @@ class ScaledDotProductAttention(nn.Module):
     ):
         if need_key_trans:
             key = key.transpose(-1, -2)
-        scale_factor, is_division = scale_params
         attention_mask, is_add = add_params
-
-        if isinstance(scale_factor, float):
-            scale_factor = torch.tensor(scale_factor)
 
         return sdpa_forward(
             query,
             key,
             value,
             attention_mask,
-            scale_factor,
-            is_division,
+            self.softmax_scale,
             is_add,
             output_shape,
             output_dtype,
@@ -229,6 +221,9 @@ def _is_sdpa(node: fx.Node):
     scale_params = (1.0, False)
     is_scale_op, is_div = check_div_or_mul_op(bmm_1_node)
     if is_scale_op:
+        scale_factor = get_input_node(bmm_1_node, 1)
+        if isinstance(scale_factor, fx.Node):
+            return False, None
         scale_params = (get_input_node(bmm_1_node, 1), is_div)
         bmm_1_node = get_actual_node(bmm_1_node, 0)
 
@@ -262,23 +257,25 @@ class FusedFlashAttention1(Pattern):
     _opt_level = OptLevel.level2
 
     def process(self, graph_module: fx.GraphModule):
-        graph_module.add_submodule(
-            "scaled_dot_product_attention", ScaledDotProductAttention()
-        )
         modified = False
         for node in reversed(graph_module.graph.nodes):
             matched, fa_param = _is_sdpa(node)
             if not matched:
                 continue
+            scale_factor, is_div = fa_param[4]
+            module_name = register_new_submodule(
+                graph_module,
+                "scaled_dot_product_attention",
+                ScaledDotProductAttention,
+                args=(scale_factor, is_div),
+            )
             with graph_module.graph.inserting_before(node):
                 fused = graph_module.graph.call_module(
-                    "scaled_dot_product_attention",
+                    module_name,
                     args=tuple(fa_param),
                 )
 
             node.replace_all_uses_with(fused)
             modified = True
-        if modified:
-            print(graph_module.graph)
 
         return modified

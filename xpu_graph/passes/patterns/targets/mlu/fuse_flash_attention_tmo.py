@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 from xpu_graph import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
+from ...utils.submodule_manager import register_new_submodule
 from xpu_graph.utils import logger
 import torch.nn.functional as F
 from ...utils.check_ops import (
@@ -27,8 +28,7 @@ def tmo_fa_forward(
     key: torch.Tensor,
     value: torch.Tensor,
     attention_mask: torch.Tensor,
-    scale_factor: torch.Tensor,
-    is_division: bool,
+    softmax_scale: float,
     is_add: bool,
     output_shape: List[int],
     output_dtype: torch.dtype,
@@ -54,9 +54,6 @@ def tmo_fa_forward(
         attention_mask = torch.broadcast_to(
             attention_mask, (batch, head_num_q, seq_q, seq_kv)
         ).contiguous()
-
-    scale_factor = scale_factor.item()
-    softmax_scale = 1.0 / scale_factor if is_division else scale_factor
 
     output = torch_mlu_ops.flash_attention(
         query,
@@ -85,8 +82,7 @@ def tmo_fa_forward_fake(
     key: torch.Tensor,
     value: torch.Tensor,
     attention_mask: torch.Tensor,
-    scale_factor: torch.Tensor,
-    is_division: bool,
+    softmax_scale: float,
     is_add: bool,
     output_shape: List[int],
     output_dtype: torch.dtype,
@@ -101,8 +97,11 @@ def tmo_fa_forward_fake(
 
 
 class TMOFlashAttention(nn.Module):
-    def __init__(self):
+    def __init__(self, scale_factor, is_division):
         super().__init__()
+        if not isinstance(scale_factor, float):
+            scale_factor = scale_factor.item()
+        self.softmax_scale = 1.0 / scale_factor if is_division else scale_factor
 
     def forward(
         self,
@@ -118,19 +117,14 @@ class TMOFlashAttention(nn.Module):
     ):
         if need_key_trans:
             key = key.transpose(-1, -2)
-        scale_factor, is_division = scale_params
         attention_mask, is_add = add_params
-
-        if isinstance(scale_factor, float):
-            scale_factor = torch.tensor(scale_factor)
 
         return tmo_fa_forward(
             query,
             key,
             value,
             attention_mask,
-            scale_factor,
-            is_division,
+            self.softmax_scale,
             is_add,
             output_shape,
             output_dtype,
@@ -220,7 +214,7 @@ def _is_tmofa(node):
     fa_param[3] = value.args[0]
     if is_scale_op:
         fa_param[4] = new_scale_param
-    return True, tuple(fa_param + [True])
+    return True, fa_param + [True]
 
 
 class FusedFlashAttention2(Pattern):
@@ -233,15 +227,20 @@ class FusedFlashAttention2(Pattern):
             for node in graph_module.graph.nodes
             if node.op == "call_module" and "scaled_dot_product_attention" in node.name
         ]
-
-        graph_module.add_submodule("tmo_flash_attention", TMOFlashAttention())
         for node in candidates:
             matched, fa_param = _is_tmofa(node)
             if not matched:
                 continue
+            scale_factor, is_div = fa_param[4]
+            module_name = register_new_submodule(
+                graph_module,
+                "tmo_flash_attention",
+                TMOFlashAttention,
+                args=(scale_factor, is_div),
+            )
             with graph_module.graph.inserting_before(node):
                 fused = graph_module.graph.call_module(
-                    "tmo_flash_attention",
+                    module_name,
                     args=tuple(fa_param),
                 )
             node.replace_all_uses_with(fused)
@@ -266,9 +265,16 @@ class FusedFlashAttention2(Pattern):
                 fa_param[-3] = get_shape(node)
                 fa_param[-2] = get_dtype(node)
                 fa_param[-1] = False
+                scale_factor, is_div = fa_param[4]
+                module_name = register_new_submodule(
+                    graph_module,
+                    "tmo_flash_attention",
+                    TMOFlashAttention,
+                    args=(scale_factor, is_div),
+                )
                 with graph_module.graph.inserting_before(node):
                     fused = graph_module.graph.call_module(
-                        "tmo_flash_attention",
+                        module_name,
                         args=tuple(fa_param),
                     )
                 node.replace_all_uses_with(fused)
