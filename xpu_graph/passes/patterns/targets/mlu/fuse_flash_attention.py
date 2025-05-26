@@ -6,6 +6,7 @@ from typing import List, Tuple
 from xpu_graph import OptLevel
 from xpu_graph.passes.patterns.pattern import Pattern
 from xpu_graph.utils import logger
+import torch.nn.functional as F
 from ...utils.check_ops import (
     check_copy,
     check_add_op,
@@ -13,10 +14,45 @@ from ...utils.check_ops import (
     check_softmax_op,
     get_actual_node,
     get_shape,
-    check_div_or_mul_op,
-    check_sub_or_add_op,
+    get_dtype,
+    # check_div_or_mul_op,
+    # check_sub_or_add_op,
     check_view,
+    _is_valid_node,
+    get_input_node,
 )
+
+
+def check_div_or_mul_op(
+    node: fx.Node,
+):
+    if not _is_valid_node(node):
+        return False, None
+
+    if node.target not in [
+        torch.ops.aten.div.Tensor,
+        torch.ops.aten.mul.Tensor,
+    ]:
+        return False, None
+
+    is_div = node.target == torch.ops.aten.div.Tensor
+    return True, is_div
+
+
+def check_sub_or_add_op(
+    node: fx.Node,
+):
+    if not _is_valid_node(node):
+        return False, None
+
+    if node.target not in [
+        torch.ops.aten.add.Tensor,
+        torch.ops.aten.sub.Tensor,
+    ]:
+        return False, None
+
+    is_add = node.target == torch.ops.aten.add.Tensor
+    return True, is_add
 
 
 @torch.library.custom_op("torch_mlu::tmo_fa_forward", mutates_args=())
@@ -41,11 +77,23 @@ def tmo_fa_forward(
         value = value.to(output_dtype)
 
     if len(query.shape) == 4:
-        batch_size, num_heads, sequence_len, head_dim = query.shape
+        batch, head_num_q, seq_q, head_size_qk = query.shape
     else:
-        num_heads, sequence_len, head_dim = query.shape
-        batch_size = 1
-    key_sequence_len = key.shape[-2]
+        head_num_q, seq_q, head_size_qk = query.shape
+        batch = 1
+    seq_kv = key.shape[-2]
+
+    if (
+        attention_mask != None
+        and len(attention_mask.shape) == 4
+        and len(query.shape) == 3
+    ):
+        batch = attention_mask.shape[0]
+        head_num_q = query.shape[0] // batch
+        query = query.view(batch, head_num_q, seq_q, head_size_qk)
+        key = key.view(batch, -1, seq_kv, head_size_qk)
+        value = value.view(batch, key.shape[1], seq_kv, -1)
+    # print("JYJ", attention_mask.shape, query.shape)
 
     if attention_mask != None:
         if attention_mask.dtype != output_dtype:
@@ -53,13 +101,13 @@ def tmo_fa_forward(
         if is_add == False:
             attention_mask = torch.neg(attention_mask)
         attention_mask = torch.broadcast_to(
-            attention_mask, (batch_size, num_heads, sequence_len, key_sequence_len)
+            attention_mask, (batch, head_num_q, seq_q, seq_kv)
         ).contiguous()
 
     scale_factor = scale_factor.item()
     softmax_scale = 1.0 / scale_factor if is_division else scale_factor
 
-    if num_heads <= 128:
+    if head_num_q <= 128:
         if len(query.shape) == 4:
             query = query.transpose(2, 1)
             key = key.transpose(2, 1)
@@ -68,37 +116,43 @@ def tmo_fa_forward(
             query = query.transpose(0, 1)
             key = key.transpose(0, 1)
             value = value.transpose(0, 1)
+            # query: total_seq_q, head_num_q, head_size_qk
         key = key.contiguous()
         output = torch_mlu_ops.flash_attention(
             query,
             key,
             value,
             None,
-            torch.tensor([0, sequence_len], dtype=torch.int32, device="mlu"),
-            torch.tensor([0, key_sequence_len], dtype=torch.int32, device="mlu"),
+            torch.tensor([0, seq_q], dtype=torch.int32, device="mlu"),
+            torch.tensor([0, seq_kv], dtype=torch.int32, device="mlu"),
             None,
             attention_mask,
-            sequence_len,
-            key_sequence_len,
+            seq_q,
+            seq_kv,
             softmax_scale,
             False,
         )
-        output = output.reshape(-1, sequence_len, num_heads, head_dim).transpose(1, 2)
-        if output.dtype != output_dtype:
-            output = output.to(output_dtype)
-        return output.view(output_shape)
+        output = output.reshape(-1, seq_q, head_num_q, head_size_qk).transpose(1, 2)
     else:
+        query = query.view(batch, head_num_q, seq_q, head_size_qk)
+        key = key.view(batch, -1, seq_kv, head_size_qk)
+        value = value.view(batch, key.shape[1], seq_kv, -1)
+        output = F.scaled_dot_product_attention(
+            query, key, value, attn_mask=attention_mask, scale=softmax_scale
+        )
+        """
         qk = torch.matmul(query, key.transpose(-2, -1)) * softmax_scale
         if attention_mask != None:
             if len(attention_mask.shape) == 4:
-                qk = qk.view(batch_size, num_heads, sequence_len, key_sequence_len)
+                qk = qk.view(batch, head_num_q, seq_q, seq_kv)
             qk += attention_mask
         qk = qk.softmax(dim=-1)
-        qk = qk.view(-1, sequence_len, key_sequence_len)
+        qk = qk.view(-1, seq_q, seq_kv)
         output = torch.bmm(qk, value)
-        if output.dtype != output_dtype:
-            output = output.to(output_dtype)
-        return output.view(output_shape)
+        """
+    if output.dtype != output_dtype:
+        output = output.to(output_dtype)
+    return output.reshape(output_shape)
 
 
 @tmo_fa_forward.register_fake
@@ -195,17 +249,17 @@ def _is_fa(node: fx.Node):
 
     # (optional) find add
     add_params = (None, False)
-    is_scale_op, addinput1, params = check_sub_or_add_op(bmm_1_node)
+    is_scale_op, is_add = check_sub_or_add_op(bmm_1_node)
     if is_scale_op:
-        add_params = params
-        bmm_1_node = addinput1
+        add_params = (get_input_node(bmm_1_node, 1), is_add)
+        bmm_1_node = get_actual_node(bmm_1_node, 0)
 
     # (optional) find div or mul
     scale_params = (1.0, False)
-    is_scale_op, div_input_node, params = check_div_or_mul_op(bmm_1_node)
+    is_scale_op, is_div = check_div_or_mul_op(bmm_1_node)
     if is_scale_op:
-        scale_params = params
-        bmm_1_node = div_input_node
+        scale_params = (get_input_node(bmm_1_node, 1), is_div)
+        bmm_1_node = get_actual_node(bmm_1_node, 0)
 
     if bmm_1_node.target != "mlu_tmo_fused_bmm_replacement":
         if bmm_1_node.target != "mlu_tmo_fused_bmm_add_replacement":
@@ -216,19 +270,14 @@ def _is_fa(node: fx.Node):
         add_params[0] = bmm_1_node.args[2]
         add_params[1] = True
 
-    if node.args[-1] is None:
-        output_shape = [node.args[1][0], node.args[1][1], node.args[3][2]]
-    else:
-        output_shape = list(node.args[-1])
-
     return True, [
         bmm_1_node.args[0],
         bmm_1_node.args[2],
         node.args[2],
         scale_params,
         add_params,
-        output_shape,
-        node.args[-3],
+        get_shape(node),
+        get_dtype(node),
     ]
 
 

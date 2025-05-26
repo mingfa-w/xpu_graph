@@ -437,7 +437,12 @@ class TestFA:
 
 if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, freeze=False, debug=False, opt_level=OptLevel.level2
+        is_training=False,
+        freeze=False,
+        debug=False,
+        opt_level=OptLevel.level2,
+        vendor_compiler_config=None,
+        use_cache=False,
     )
     fa_test(xpu_graph_backend, _sfdp_pattern_1)
     fa_test(xpu_graph_backend, _sfdp_pattern_1_1)
