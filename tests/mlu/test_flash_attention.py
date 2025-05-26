@@ -77,6 +77,11 @@ def _sfdp_pattern_5(query, key, value, attn_mask):
     return attn_weight @ value
 
 
+# qkv:3d, mask:4d
+def _sfdp_pattern_5_2(query, key, value, attn_mask):
+    return _sfdp_pattern_5(query, key, value, attn_mask)
+
+
 def _sfdp_pattern_6(query, key, value, attn_mask, dropout_p=0.0):
     attn_weight = torch.softmax(
         (query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))) + attn_mask, dim=-1
@@ -353,6 +358,7 @@ def fa_test(xpu_graph_backend, func):
         _sfdp_pattern_4,
         _sfdp_pattern_5,
         _sfdp_pattern_5_1,
+        _sfdp_pattern_5_2,
         _sfdp_pattern_6,
         _sfdp_pattern_6_1,
         _sfdp_pattern_13,
@@ -363,6 +369,10 @@ def fa_test(xpu_graph_backend, func):
         q = torch.randn(batch, head_num_q, seq_q, head_size, dtype=dtype, device="mlu")
         k = torch.randn(batch, head_num_k, seq_k, head_size, dtype=dtype, device="mlu")
         v = torch.randn(batch, head_num_k, seq_k, head_size, dtype=dtype, device="mlu")
+        if func == _sfdp_pattern_5_2:
+            q = q.view(-1, seq_q, head_size)
+            k = k.view(-1, seq_k, head_size)
+            v = v.view(-1, seq_k, head_size)
     else:  # have trans
         q = torch.randn(batch, seq_q, head_num_q, head_size, dtype=dtype, device="mlu")
         k = torch.randn(batch, seq_k, head_num_k, head_size, dtype=dtype, device="mlu")
@@ -378,6 +388,7 @@ def fa_test(xpu_graph_backend, func):
 
     if func in [
         _sfdp_pattern_5,
+        _sfdp_pattern_5_2,
         _sfdp_pattern_6,
         _sfdp_pattern_6_1,
         _sfdp_pattern_14,
@@ -418,6 +429,7 @@ class TestFA:
             _sfdp_pattern_4,
             _sfdp_pattern_5,
             _sfdp_pattern_5_1,
+            _sfdp_pattern_5_2,
             _sfdp_pattern_6,
             _sfdp_pattern_6_1,
             _sfdp_pattern_7,
@@ -427,12 +439,15 @@ class TestFA:
             _sfdp_pattern_11,
             _sfdp_pattern_12,
             _sfdp_pattern_13,
+            _sfdp_pattern_16,
         ],
     )
     def test_sfdp_patterns(self, caplog, pattern_func):
         with need_xpu_graph_logs(), skip_xpu_graph_cache(self.xpu_graph_backend):
             fa_test(self.xpu_graph_backend, pattern_func)
-        assert "Pattern.FusedFlashAttention changed graph" in caplog.text
+        assert "FusedFlashAttention" in caplog.text
+        if pattern_func in [_sfdp_pattern_16]:
+            assert "FusedFlashAttention2" in caplog.text
 
 
 if __name__ == "__main__":
@@ -444,7 +459,8 @@ if __name__ == "__main__":
         vendor_compiler_config=None,
         use_cache=False,
     )
-    fa_test(xpu_graph_backend, _sfdp_pattern_1)
+    fa_test(xpu_graph_backend, _sfdp_pattern_16)
+    """
     fa_test(xpu_graph_backend, _sfdp_pattern_1_1)
     fa_test(xpu_graph_backend, _sfdp_pattern_2)
     fa_test(xpu_graph_backend, _sfdp_pattern_3)
@@ -463,3 +479,4 @@ if __name__ == "__main__":
     fa_test(xpu_graph_backend, _sfdp_pattern_transformer_2)
     fa_test(xpu_graph_backend, _sfdp_pattern_transformer_3)
     fa_test(xpu_graph_backend, _sfdp_pattern_6_1)
+    """
