@@ -1,20 +1,21 @@
 import copy
 import hashlib
 import os
-import sys
 import pickle
-from typing import Union, Optional
+import sys
 from os import PathLike
+from typing import Optional, Union
+
 import torch
 from torch._dynamo.convert_frame import compile_lock
 from torch._dynamo.device_interface import get_interface_for_device
-from torch.utils._python_dispatch import _disable_current_modes
 from torch._inductor.utils import BoxedBool
+from torch.utils._python_dispatch import _disable_current_modes
 
 torch_version = torch.__version__
 if torch_version.startswith("2.6"):
+    from torch._inductor.codecache import FxGraphCache, PyCodeCache, get_path
     from torch._inductor.compile_fx import CompiledFxGraph
-    from torch._inductor.codecache import PyCodeCache, get_path, FxGraphCache
 else:
     from torch._inductor.codecache import (
         CompiledFxGraph,
@@ -22,14 +23,16 @@ else:
         get_path,
         FxGraphCache,
     )
-from torch.fx import GraphModule, Graph, Node
+
+from collections.abc import Callable
+
+from torch.fx import Graph, GraphModule, Node
 from torch.fx.node import map_aggregate
 from torch.utils._python_dispatch import _disable_current_modes
 
 from .config import XpuGraphConfig
 from .fx_utils import FxStage
 from .utils import logger
-from collections.abc import Callable
 
 
 class _ArgWrapper:
@@ -131,9 +134,7 @@ class SerializeWrapper(torch.nn.Module):
             #   2. Example_inputs in post_compile actually leads to symint guards,
             #      but we choose to not produce extra guards
             if torch_version.startswith("2.5"):
-                FxGraphCache.post_compile(
-                    compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs)
-                )
+                FxGraphCache.post_compile(compiled_fn, example_inputs=[], cudagraphs=BoxedBool(cudagraphs))
             return SerializeWrapper(compiled_fn)
         elif cls == GraphModule:
             gm_dict, graph_meta, nodes_meta = arg_tuple
@@ -155,9 +156,7 @@ class SerializeWrapper(torch.nn.Module):
                     return arg
 
             for node_meta in nodes_meta:
-                node_name, node_type, node_op, node_target, node_args, node_kwargs = (
-                    node_meta
-                )
+                node_name, node_type, node_op, node_target, node_args, node_kwargs = node_meta
 
                 if node_op == "call_function":
                     node_target = _get_target_function(node_target)
@@ -278,5 +277,6 @@ def default_cache():
         import tempfile
 
         cache_path = tempfile.mkdtemp(prefix="xpugraph_")
+        os.environ["XPUGRAPH_CACHE_DIR"] = cache_path
         logger.debug(f"Use {cache_path} as default local cache")
     return XpuGraphLocalCache(cache_path)

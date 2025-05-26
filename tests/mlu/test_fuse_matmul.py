@@ -1,10 +1,10 @@
 import pytest
 import torch
+import torch.nn.functional as F
 import torch_mlu
+
 import xpu_graph
 from xpu_graph.config import OptLevel
-import torch.nn.functional as F
-from xpu_graph.test_utils import assertTensorsEqual
 from xpu_graph.test_utils import (
     assertTensorsEqual,
     need_xpu_graph_logs,
@@ -85,11 +85,7 @@ def fn15(inputs, weight, bias):
 
 
 def fn16(inputs, weight, bias):
-    return (
-        F.silu(fn3(inputs, weight, bias).reshape(128, 32, 16))
-        .view(-1)
-        .reshape(128, 32, 16)
-    )
+    return F.silu(fn3(inputs, weight, bias).reshape(128, 32, 16)).view(-1).reshape(128, 32, 16)
 
 
 def fn17(inputs, weight, bias):
@@ -108,12 +104,18 @@ def fn19(inputs, weight, bias):
     return output
 
 
+def fn20(inputs, weight, bias):
+    output = fn3(inputs, weight, bias).reshape(128, 32, 16)
+    output = torch.sigmoid(output)
+    return output.view(-1).reshape(128, 32, 16)
+
+
 def matmul_test(xpu_graph_backend, func):
     if func in [fn0, fn1, fn9]:
         inputs = torch.randn((4096, 768), device=device, dtype=data_type)
         weight = torch.randn((768, 16), device=device, dtype=data_type)
         bias = torch.randn((16), device=device, dtype=data_type)
-    elif func in [fn2, fn3, fn10, fn11, fn12, fn13, fn14, fn15, fn16, fn17]:
+    elif func in [fn2, fn3, fn10, fn11, fn12, fn13, fn14, fn15, fn16, fn17, fn20]:
         inputs = torch.randn((4096, 768), device=device, dtype=data_type)
         weight = torch.randn((16, 768), device=device, dtype=data_type)
         bias = torch.randn((16), device=device, dtype=data_type)
@@ -137,16 +139,12 @@ def matmul_test(xpu_graph_backend, func):
     res = func(inputs, weight, bias)
     compiled = torch.compile(func, backend=xpu_graph_backend, dynamic=False)
     res1 = compiled(inputs, weight, bias)
-    assertTensorsEqual(
-        res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True
-    )
+    assertTensorsEqual(res.cpu().float(), res1.cpu().float(), 0.005, use_MSE=True, use_RAE=True)
 
 
 class TestMatMul:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(
-            is_training=False, opt_level=OptLevel.level2
-        )
+        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -171,6 +169,7 @@ class TestMatMul:
             fn17,
             fn18,
             fn19,
+            fn20,
         ],
     )
     def test_matmul_patterns(self, caplog, pattern_func):
@@ -183,11 +182,10 @@ class TestMatMul:
         else:
             assert "Pattern.FusedMatMulAct changed graph" in caplog.text
 
+
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(
-        is_training=False, opt_level=OptLevel.level2
-    )
-    matmul_test(xpu_graph_backend, fn16)
+    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, opt_level=OptLevel.level2)
+    matmul_test(xpu_graph_backend, fn20)
     matmul_test(xpu_graph_backend, fn17)
     matmul_test(xpu_graph_backend, fn18)
     matmul_test(xpu_graph_backend, fn19)

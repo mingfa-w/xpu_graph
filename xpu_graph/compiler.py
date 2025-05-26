@@ -1,16 +1,15 @@
+import logging
 from typing import Callable, overload
 
 import torch
-
 from torch._dynamo.backends.common import aot_autograd
 from torch._subclasses.fake_tensor import FakeTensorMode
 
+from .cache import SerializeWrapper, XpuGraphCache, default_cache
+from .config import OptLevel, Target, XpuGraphConfig
+from .fx_utils import FxStage, decompose_for_inductor, dispatch_graph
 from .passes.pass_manager import PassManager
-from .config import XpuGraphConfig, Target, OptLevel
-from .utils import logger, setup_logger, local_logger, NodesStatistics, GitLikeDiffer
-from .cache import XpuGraphCache, default_cache, SerializeWrapper
-from .fx_utils import FxStage, dispatch_graph, decompose_for_inductor
-import logging
+from .utils import GitLikeDiffer, NodesStatistics, local_logger, logger, setup_logger
 
 
 def optimize_graph(gm, sample_inputs, config=None):
@@ -32,10 +31,7 @@ def optimize_graph(gm, sample_inputs, config=None):
     # Create fake inputs for optimization
     fake_mode = FakeTensorMode()
     fake_mode.allow_non_fake_inputs = True
-    fake_inputs = [
-        fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
-        for x in sample_inputs
-    ]
+    fake_inputs = [fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x for x in sample_inputs]
 
     with fake_mode:
         logger.debug(f"before xpu_optimize_graph, graph like:\n {gm.graph}")
@@ -45,9 +41,7 @@ def optimize_graph(gm, sample_inputs, config=None):
         xpu_optimized = pass_manager(gm, fake_inputs, stage=FxStage.inference)
 
         logger.debug(f"after xpu_optimize_graph, graph like:\n {xpu_optimized.graph}")
-        logger.info(
-            f"after xpu_optimize_graph, nodes num: {len(xpu_optimized.graph.nodes)}"
-        )
+        logger.info(f"after xpu_optimize_graph, nodes num: {len(xpu_optimized.graph.nodes)}")
 
     return xpu_optimized
 
@@ -69,18 +63,13 @@ class XpuGraph:
             self._config.enable_cache = False
             logger.warning("Target Ascend does not support cache.")
 
-        self._pass_manager = PassManager(self._config)
-        self._cache = (
-            cache
-            if cache and config.enable_cache
-            else default_cache() if config.enable_cache else None
-        )
+        self._cache = cache if cache and config.enable_cache else default_cache() if config.enable_cache else None
 
         self._set_context()
+        self._pass_manager = PassManager(self._config)
 
     def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
         def _compiler(gm, fake_inputs, stage: FxStage):
-
             nodes_statistics = NodesStatistics()
 
             # Create fake inputs for optimization
@@ -91,9 +80,7 @@ class XpuGraph:
 
             with fake_mode:
                 if self._config.enable_cache:
-                    hashkey = self._cache.cache_key(
-                        gm, fake_inputs, self._config, stage
-                    )
+                    hashkey = self._cache.cache_key(gm, fake_inputs, self._config, stage)
                     cached_compiled = self._cache.load_gm(hashkey)
                     if cached_compiled is not None:
                         return cached_compiled
@@ -156,9 +143,7 @@ class XpuGraph:
             # It's okay use optimized infer-graph for training as well
             logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
             logger.info("decompose graph start...")
-            dispatched_gm, fake_inputs = dispatch_graph(
-                dynamo_gm, example_inputs, stage=FxStage.pregrad
-            )
+            dispatched_gm, fake_inputs = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.pregrad)
             logger.info("decompose graph complete")
             logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
 
@@ -171,14 +156,10 @@ class XpuGraph:
         else:
             logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
             logger.info("decompose graph start...")
-            dispatched_gm, fake_inputs = dispatch_graph(
-                dynamo_gm, example_inputs, stage=FxStage.inference
-            )
+            dispatched_gm, fake_inputs = dispatch_graph(dynamo_gm, example_inputs, stage=FxStage.inference)
             logger.info("decompose graph complete")
             logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
-            logger.debug(
-                f"Difference:\n %s", GitLikeDiffer(dynamo_gm.graph, dispatched_gm.graph)
-            )
+            logger.debug(f"Difference:\n %s", GitLikeDiffer(dynamo_gm.graph, dispatched_gm.graph))
 
             xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 
@@ -189,9 +170,7 @@ class XpuGraph:
 
     def _set_context(self):
         self._orig_ctx = {}
-        self._orig_ctx["torch._inductor.config.freezing"] = (
-            torch._inductor.config.freezing
-        )
+        self._orig_ctx["torch._inductor.config.freezing"] = torch._inductor.config.freezing
         if self._config.freeze and self._config.is_training == False:
             # The configuration in this inductor affects the return value of is_parameter_freezing(),
             # thereby influencing the process of generating the fx_graph in dynamo. The current code
@@ -204,24 +183,16 @@ class XpuGraph:
 
         if self._config.target != Target.none:
             if torch._dynamo.config.trace_numpy:
-                self._orig_ctx["torch._dynamo.config.numpy_default_float"] = (
-                    torch._dynamo.config.numpy_default_float
-                )
-                logger.info(
-                    "xpu_graph set the default traced numpy float dtype to float32"
-                )
+                self._orig_ctx["torch._dynamo.config.numpy_default_float"] = torch._dynamo.config.numpy_default_float
+                logger.info("xpu_graph set the default traced numpy float dtype to float32")
                 torch._dynamo.config.numpy_default_float = "float32"
 
         if self._cache is not None:
             self._orig_ctx["self._cache.orig_ctx"] = self._cache._set_cache_ctx()
 
     def _restore_context(self):
-        torch._inductor.config.freezing = self._orig_ctx[
-            "torch._inductor.config.freezing"
-        ]
+        torch._inductor.config.freezing = self._orig_ctx["torch._inductor.config.freezing"]
         if "torch._dynamo.config.numpy_default_float" in self._orig_ctx:
-            torch._dynamo.config.numpy_default_float = self._orig_ctx[
-                "torch._dynamo.config.numpy_default_float"
-            ]
+            torch._dynamo.config.numpy_default_float = self._orig_ctx["torch._dynamo.config.numpy_default_float"]
         if self._cache is not None:
             self._cache._restore_cache_ctx(self._orig_ctx["self._cache.orig_ctx"])

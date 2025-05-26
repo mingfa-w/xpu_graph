@@ -2,13 +2,18 @@
 # https://github.com/FlagOpen/FlagGems/blob/master/src/flag_gems/utils/libentry.py
 # Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
 # Copyright (c) FlagOpen contributors
+#
+# Modified by xpu_graph for internal use.
 
+import functools
 import inspect
+import os
 import sqlite3
 import threading
 import weakref
-from typing import Dict
 from pathlib import Path
+from typing import Dict
+
 import torch
 import torch_mlu
 import triton
@@ -24,10 +29,30 @@ ATTRS = {
 version = triton.__version__.split(".")
 major_version, minor_version = eval(version[0]), eval(version[1])
 
+
+@functools.lru_cache(maxsize=None)  # this is the same as functools.cache in Python 3.9+
+def cache_dir_path() -> Path:
+    """Return the cache directory for generated files in libtuner."""
+    _cache_dir = os.environ.get("TRITON_CACHE_DIR")
+    if _cache_dir is None:
+        _cache_dir = Path.home() / ".xpugraph_libentry"
+    else:
+        _cache_dir = Path(_cache_dir)
+    return _cache_dir
+
+
+def cache_dir() -> Path:
+    """Return cache directory for generated files in libtuner. Create it if it does not exist."""
+    _cache_dir = cache_dir_path()
+    os.makedirs(_cache_dir, exist_ok=True)
+    return _cache_dir
+
+
 def config_cache_dir() -> Path:
     _config_cache_dir = cache_dir() / "config_cache"
     os.makedirs(_config_cache_dir, exist_ok=True)
     return _config_cache_dir
+
 
 class LibTuner(triton.runtime.Autotuner):
     def __init__(
@@ -83,9 +108,7 @@ class LibTuner(triton.runtime.Autotuner):
     def preload(self):
         connect = sqlite3.connect(self.cache_path)
         c = connect.cursor()
-        c.execute(
-            f"CREATE TABLE IF NOT EXISTS {self.__name__} (key TEXT PRIMARY KEY, config TEXT)"
-        )
+        c.execute(f"CREATE TABLE IF NOT EXISTS {self.__name__} (key TEXT PRIMARY KEY, config TEXT)")
         cursor = c.execute(f"SELECT key, config from {self.__name__}")
 
         for row in cursor:
@@ -114,9 +137,7 @@ class LibTuner(triton.runtime.Autotuner):
             return
         connect = sqlite3.connect(self.cache_path)
         c = connect.cursor()
-        c.execute(
-            f"CREATE TABLE IF NOT EXISTS {self.__name__} (key TEXT PRIMARY KEY, config TEXT)"
-        )
+        c.execute(f"CREATE TABLE IF NOT EXISTS {self.__name__} (key TEXT PRIMARY KEY, config TEXT)")
         for key, config in self.cache.items():
             c.execute(
                 f"INSERT OR IGNORE INTO {self.__name__} (key, config) VALUES (?, ?)",
@@ -176,14 +197,10 @@ class LibEntry(triton.KernelInterface):
             fn = fn.fn
         self.jit_function: triton.runtime.JITFunction = fn
         self.specialize_indices = [
-            p.num
-            for p in self.jit_function.params
-            if not p.is_constexpr and not p.do_not_specialize
+            p.num for p in self.jit_function.params if not p.is_constexpr and not p.do_not_specialize
         ]
         self.do_not_specialize_indices = [
-            p.num
-            for p in self.jit_function.params
-            if not p.is_constexpr and p.do_not_specialize
+            p.num for p in self.jit_function.params if not p.is_constexpr and p.do_not_specialize
         ]
         self.lock = threading.Lock()
 
@@ -244,7 +261,7 @@ class LibEntry(triton.KernelInterface):
                 k_args.append(val)
 
         entry_key = self.key(spec_args, dns_args, const_args)
-        #device = torch_device_fn.current_device()
+        # device = torch_device_fn.current_device()
         device = torch.mlu.current_device()
         cache = self.kernel_cache[device]
         while entry_key not in cache:
@@ -277,11 +294,7 @@ class LibEntry(triton.KernelInterface):
                         raise RuntimeError("Invalid Runtime Function")
                     fn = fn.fn
                 for p in self.jit_function.params:
-                    if (
-                        p.is_constexpr
-                        and p.name not in constexprs
-                        and (p.default is not inspect._empty)
-                    ):
+                    if p.is_constexpr and p.name not in constexprs and (p.default is not inspect._empty):
                         constexprs[p.name] = p.default
                 cache[entry_key] = (kernel, constexprs)
             return kernel, constexprs
@@ -298,7 +311,7 @@ class LibEntry(triton.KernelInterface):
             grid = grid(meta)
         grid = grid + (1, 1)
 
-        kernel[grid[0:3]](*k_args)
+        kernel[grid[0:3]](*[x for x in k_args if x is not None])
         return kernel, constexprs
 
 
