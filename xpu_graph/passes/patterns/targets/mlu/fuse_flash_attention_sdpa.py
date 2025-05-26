@@ -92,7 +92,6 @@ def sdpa_forward(
     output_shape: List[int],
     output_dtype: torch.dtype,
 ) -> torch.Tensor:
-    import torch_mlu_ops
 
     if query.dtype != output_dtype:
         query = query.to(output_dtype)
@@ -121,49 +120,22 @@ def sdpa_forward(
     scale_factor = scale_factor.item()
     softmax_scale = 1.0 / scale_factor if is_division else scale_factor
 
-    if 0:  # head_num_q <= 128:
-        if len(query.shape) == 4:
-            query = query.transpose(2, 1)
-            key = key.transpose(2, 1)
-            value = value.transpose(2, 1)
-        else:
-            query = query.transpose(0, 1)
-            key = key.transpose(0, 1)
-            value = value.transpose(0, 1)
-            # query: total_seq_q, head_num_q, head_size_qk
-        key = key.contiguous()
-        output = torch_mlu_ops.flash_attention(
-            query,
-            key,
-            value,
-            None,
-            torch.tensor([0, seq_q], dtype=torch.int32, device="mlu"),
-            torch.tensor([0, seq_kv], dtype=torch.int32, device="mlu"),
-            None,
-            attention_mask,
-            seq_q,
-            seq_kv,
-            softmax_scale,
-            False,
-        )
-        output = output.reshape(-1, seq_q, head_num_q, head_size_qk).transpose(1, 2)
-    else:
-        query = query.view(batch, head_num_q, seq_q, head_size_qk)
-        key = key.view(batch, -1, seq_kv, head_size_qk)
-        value = value.view(batch, key.shape[1], seq_kv, -1)
-        output = F.scaled_dot_product_attention(
-            query, key, value, attn_mask=attention_mask, scale=softmax_scale
-        )
-        """
-        qk = torch.matmul(query, key.transpose(-2, -1)) * softmax_scale
-        if attention_mask != None:
-            if len(attention_mask.shape) == 4:
-                qk = qk.view(batch, head_num_q, seq_q, seq_kv)
-            qk += attention_mask
-        qk = qk.softmax(dim=-1)
-        qk = qk.view(-1, seq_q, seq_kv)
-        output = torch.bmm(qk, value)
-        """
+    query = query.view(batch, head_num_q, seq_q, head_size_qk)
+    key = key.view(batch, -1, seq_kv, head_size_qk)
+    value = value.view(batch, key.shape[1], seq_kv, -1)
+    output = F.scaled_dot_product_attention(
+        query, key, value, attn_mask=attention_mask, scale=softmax_scale
+    )
+    """
+    qk = torch.matmul(query, key.transpose(-2, -1)) * softmax_scale
+    if attention_mask != None:
+        if len(attention_mask.shape) == 4:
+            qk = qk.view(batch, head_num_q, seq_q, seq_kv)
+        qk += attention_mask
+    qk = qk.softmax(dim=-1)
+    qk = qk.view(-1, seq_q, seq_kv)
+    output = torch.bmm(qk, value)
+    """
     if output.dtype != output_dtype:
         output = output.to(output_dtype)
     return output.reshape(output_shape)
@@ -213,118 +185,6 @@ class ScaledDotProductAttention(nn.Module):
             scale_factor = torch.tensor(scale_factor)
 
         return sdpa_forward(
-            query,
-            key,
-            value,
-            attention_mask,
-            scale_factor,
-            is_division,
-            is_add,
-            output_shape,
-            output_dtype,
-        )
-
-
-@torch.library.custom_op("torch_mlu::tmo_fa_forward", mutates_args=())
-def tmo_fa_forward(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    attention_mask: torch.Tensor,
-    scale_factor: torch.Tensor,
-    is_division: bool,
-    is_add: bool,
-    output_shape: List[int],
-    output_dtype: torch.dtype,
-) -> torch.Tensor:
-    import torch_mlu_ops
-
-    if query.dtype != output_dtype:
-        query = query.to(output_dtype)
-    if key.dtype != output_dtype:
-        key = key.to(output_dtype)
-    if value.dtype != output_dtype:
-        value = value.to(output_dtype)
-
-    batch, seq_q, head_num_q, head_size_qk = query.shape
-    seq_kv = key.shape[1]
-
-    if attention_mask != None:
-        if attention_mask.dtype != output_dtype:
-            attention_mask = attention_mask.to(output_dtype)
-        if is_add == False:
-            attention_mask = torch.neg(attention_mask)
-        attention_mask = torch.broadcast_to(
-            attention_mask, (batch, head_num_q, seq_q, seq_kv)
-        ).contiguous()
-
-    scale_factor = scale_factor.item()
-    softmax_scale = 1.0 / scale_factor if is_division else scale_factor
-
-    output = torch_mlu_ops.flash_attention(
-        query,
-        key,
-        value,
-        None,
-        torch.tensor([0, seq_q], dtype=torch.int32, device="mlu"),
-        torch.tensor([0, seq_kv], dtype=torch.int32, device="mlu"),
-        None,
-        attention_mask,
-        seq_q,
-        seq_kv,
-        softmax_scale,
-        False,
-    )
-    output = output.reshape(-1, seq_q, head_num_q, head_size_qk).transpose(1, 2)
-    if output.dtype != output_dtype:
-        output = output.to(output_dtype)
-    return output.reshape(output_shape)
-
-
-@tmo_fa_forward.register_fake
-def tmo_fa_forward_fake(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    attention_mask: torch.Tensor,
-    scale_factor: torch.Tensor,
-    is_division: bool,
-    is_add: bool,
-    output_shape: List[int],
-    output_dtype: torch.dtype,
-) -> torch.Tensor:
-    output_tensor = torch.empty(
-        output_shape,
-        dtype=output_dtype,
-        device=query.device,
-    )
-    return output_tensor
-
-
-class TMOFlashAttention(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(
-        self,
-        query,
-        key,
-        need_key_trans,
-        value,
-        scale_params,
-        add_params,
-        output_shape,
-        output_dtype,
-    ):
-        if need_key_trans:
-            key = key.transpose(-1, -2)
-        scale_factor, is_division = scale_params
-        attention_mask, is_add = add_params
-
-        if isinstance(scale_factor, float):
-            scale_factor = torch.tensor(scale_factor)
-
-        return tmo_fa_forward(
             query,
             key,
             value,
@@ -421,60 +281,4 @@ class FusedFlashAttention1(Pattern):
         if modified:
             print(graph_module.graph)
 
-        return modified
-
-
-def _is_tmofa(node):
-    fa_param = list(node.args)
-    query = get_actual_node(node, 0)
-    key = get_actual_node(node, 1)
-    value = get_actual_node(node, 3)
-    for node in (query, key, value):
-        if len(get_shape(node)) != 4:
-            return False, None
-
-        if node.target == torch.ops.aten.permute.default and node.args[1] == [
-            0,
-            2,
-            1,
-            3,
-        ]:
-            continue
-        else:
-            return False, None
-
-    # tmo fa limit
-    head_num_q = get_shape(query)[2]
-    if head_num_q > 128:
-        return False, None
-
-    fa_param[0] = query.args[0]
-    fa_param[1] = key.args[0]
-    fa_param[3] = value.args[0]
-    return True, tuple(fa_param)
-
-
-class FusedFlashAttention2(Pattern):
-    _opt_level = OptLevel.level2
-
-    def process(self, graph_module: fx.GraphModule):
-        modified = False
-        candidates = [
-            node
-            for node in graph_module.graph.nodes
-            if node.op == "call_module" and "scaled_dot_product_attention" in node.name
-        ]
-
-        graph_module.add_submodule("tmo_flash_attention", TMOFlashAttention())
-        for node in candidates:
-            matched, fa_param = _is_tmofa(node)
-            if not matched:
-                continue
-            with graph_module.graph.inserting_before(node):
-                fused = graph_module.graph.call_module(
-                    "tmo_flash_attention",
-                    args=tuple(fa_param),
-                )
-            node.replace_all_uses_with(fused)
-            modified = True
         return modified
