@@ -51,10 +51,18 @@ def tmo_fa_forward(
             attention_mask = attention_mask.to(output_dtype)
         if is_add == False:
             attention_mask = torch.neg(attention_mask)
-        attention_mask = torch.broadcast_to(
-            attention_mask, (batch, head_num_q, seq_q, seq_kv)
-        ).contiguous()
+        #attention_mask = torch.broadcast_to(
+        #    attention_mask, (batch, head_num_q, seq_q, seq_kv)
+        #).contiguous()
 
+    query = query.transpose(1,2)
+    key = key.transpose(1,2)
+    value = value.transpose(1,2)
+    output = F.scaled_dot_product_attention(
+        query, key, value, attn_mask=attention_mask, scale=softmax_scale
+    )
+    output = output.transpose(1,2)
+    '''
     output = torch_mlu_ops.flash_attention(
         query,
         key,
@@ -69,6 +77,7 @@ def tmo_fa_forward(
         softmax_scale,
         False,
     )
+    '''
     if need_output_trans:
         output = output.reshape(-1, seq_q, head_num_q, head_size_qk).transpose(1, 2)
     if output.dtype != output_dtype:
