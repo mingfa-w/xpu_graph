@@ -26,7 +26,7 @@ jobs:
     name: Run npu tests
     runs-on: NPU
     container:
-      image: hub.byted.org/arnold/ascend_for_leo:3579b13e2a1ce9d478cee8f35f6ffe9f
+      image: hub.byted.org/aicompiler/npu.ci.debian12:devel_cann8.0.t115_py3.11_th26
       volumes:
         - /etc/localtime:/etc/localtime
         - /usr/local/Ascend/driver:/usr/local/Ascend/driver
@@ -39,4 +39,5 @@ jobs:
         shell: bash
         run: |
           echo "Running npu tests..."
+          pip3 install expecttest
           python3 -m pytest --ignore=tests/mlu --ignore=tests/xpu_ops --ignore=tests/common/test_inference.py tests
