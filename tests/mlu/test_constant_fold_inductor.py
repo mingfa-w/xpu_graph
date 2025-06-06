@@ -41,12 +41,12 @@ def constant_folding_with_reload_test(xpu_graph_backend):
         with torch.no_grad():
             for name, param in mod.named_parameters():
                 if name in state_dict:
-                    param.data.copy_(state_dict[name])
+                    param.data = state_dict[name]
         expect = mod(torch.ones((128, 128), device=device, dtype=dtype))
         with torch.no_grad():
             for name, param in compiled_mod.named_parameters():
                 if name in state_dict:
-                    param.data.copy_(state_dict[name])
+                    param.data = state_dict[name]
         res = compiled_mod(torch.ones((128, 128), device=device, dtype=dtype))
         assert is_similar(res, expect)
 
@@ -58,6 +58,7 @@ class TestConstantFolding:
             freeze=True,
             constant_folding=True,
             folding_freezed_params=False,
+            vendor_compiler_config={"mode": "default"},
         )
 
     def test_constant_folding(self, caplog):
@@ -72,5 +73,6 @@ if __name__ == "__main__":
         folding_freezd_params=False,
         is_training=False,
         debug=True,
+        vendor_compiler_config={"mode": "default"},
     )
     constant_folding_with_reload_test(xpu_graph_backend)
