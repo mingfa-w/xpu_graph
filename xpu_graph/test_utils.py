@@ -4,6 +4,8 @@ from .utils import logger
 from .cache import XpuGraphCache
 from .compiler import XpuGraph
 import logging
+from contextlib import contextmanager
+import time
 
 
 def is_similar(result, expected, rtol=0.01, atol=0.01):
@@ -16,6 +18,19 @@ def maybe_similar(result, expected, rtol=0.01, atol=0.01):
     if result is None or expected is None:
         return result is None and expected is None
     return is_similar(result, expected, rtol, atol)
+
+
+def aggregate_similar(result, expected, rtol=0.01, atol=0.01):
+    if isinstance(result, tuple) or isinstance(expected, tuple):
+        if not isinstance(result, tuple) or not isinstance(expected, tuple):
+            return False
+        if len(result) != len(expected):
+            return False
+        return all(
+            [aggregate_similar(r, e, rtol, atol) for r, e in zip(result, expected)]
+        )
+    else:
+        return is_similar(result, expected, rtol, atol)
 
 
 def assertTensorsEqual(
@@ -118,3 +133,10 @@ class skip_xpu_graph_cache:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.backend._cache = self.cache
+
+def timeit(func, *args, **kwargs):
+    def wrap(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        return result, time.time() - start
+    return wrap

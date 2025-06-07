@@ -1,5 +1,6 @@
 import pkgutil
 import importlib
+import os
 
 from xpu_graph.passes.patterns.pattern import Pattern, AutoMatchPattern, PatternGroup
 from xpu_graph.config import XpuGraphConfig
@@ -12,10 +13,18 @@ def get_all_patterns(config: XpuGraphConfig):
         PatternGroup.GROUP1: [],
         PatternGroup.GROUP2: [],
     }
+    # return patterns
+    # if config.export_mode:
+    #     logger.warning(
+    #         "AOTI on Ascend NPU do not support DIY triton kernel, npu patterns will be ignored!"
+    #     )
+    #     return patterns
 
     for _, module_name, _ in pkgutil.iter_modules(__path__):
+        if module_name != "fuse_broadcast_gather":
+            continue
         module = importlib.import_module(f"{__name__}.{module_name}")
-
+        # import pdb;pdb.set_trace()
         for name in dir(module):
             pat = getattr(module, name)
             if (
@@ -26,8 +35,4 @@ def get_all_patterns(config: XpuGraphConfig):
             ):
                 for stage in pat._stages:
                     patterns[pat._pattern_group].append(pat(stage))
-
-    for group, group_patterns in patterns.items():
-        logger.debug(f"xpu_graph enable builtin npu {group} patterns: {[pat.__class__.__name__ for pat in group_patterns]}")
-
     return patterns

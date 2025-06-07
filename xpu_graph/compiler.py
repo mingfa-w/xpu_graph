@@ -3,17 +3,14 @@ from typing import Callable, overload
 import torch
 
 from torch._dynamo.backends.common import aot_autograd
-from torch._functorch.aot_autograd import aot_export_module
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 from .passes.pass_manager import PassManager
-from .passes.patterns.pattern import Pattern
 from .config import XpuGraphConfig, Target, OptLevel
-from .utils import logger, setup_logger, local_logger
-from .cache import XpuGraphCache, default_cache
-from .fx_utils import FxStage, unlift_exported_gm
+from .utils import logger, setup_logger, local_logger, NodesStatistics, GitLikeDiffer
+from .cache import XpuGraphCache, default_cache, SerializeWrapper
+from .fx_utils import FxStage, dispatch_graph, decompose_for_inductor
 import logging
-from functools import partial
 
 
 def optimize_graph(gm, sample_inputs, config=None):
@@ -68,6 +65,10 @@ class XpuGraph:
 
         logger.info(f"{config}")
 
+        if self._config.target == Target.ascend:
+            self._config.enable_cache = False
+            logger.warning("Target Ascend does not support cache.")
+
         self._pass_manager = PassManager(self._config)
         self._cache = (
             cache
@@ -77,114 +78,160 @@ class XpuGraph:
 
         self._set_context()
 
-    def __call__(self, dynamo_gm, example_inputs, *args, **kwargs):
-        def _compiler(gm, sample_inputs, stage: FxStage):
+    def __call__(
+        self, dynamo_gm: torch.fx.GraphModule, example_inputs, *args, **Kwargs
+    ):
+        def _compiler(gm, fake_inputs, stage: FxStage):
+
+            nodes_statistics = NodesStatistics()
 
             # Create fake inputs for optimization
             from torch._guards import detect_fake_mode
 
-            fake_mode = detect_fake_mode(sample_inputs)
+            fake_mode = detect_fake_mode(fake_inputs)
             fake_mode.allow_non_fake_inputs = True
-            fake_inputs = [
-                fake_mode.from_tensor(x) if isinstance(x, torch.Tensor) else x
-                for x in sample_inputs
-            ]
 
             with fake_mode:
-                with local_logger("before"):
-                    logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
-                    logger.info(f"before xpu_graph, nodes num: {len(gm.graph.nodes)}")
-                    logger.info(f"xpu_graph passes start {stage}...")
-
-                if stage == FxStage.pregrad:
-                    logger.debug(f"before decompose: graph like:\n {gm.graph}")
-                    logger.info("decompose graph start...")
-                    from torch.fx.experimental.proxy_tensor import make_fx
-
-                    gm = make_fx(
-                        gm,
-                        tracing_mode="fake",
-                        pre_dispatch=True,
-                        record_module_stack=True,
-                    )(*fake_inputs)
-                    logger.info("decompose graph complete")
-                    logger.debug(f"after decompose, graph like:\n {gm.graph}")
-
                 if self._config.enable_cache:
                     hashkey = self._cache.cache_key(
                         gm, fake_inputs, self._config, stage
                     )
-                    xpu_compiled = self._cache.load_gm(hashkey)
-                    if xpu_compiled is None:
-                        xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
-                        if self._config.target != Target("ascend"):
-                            xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
-                else:
-                    xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
+                    cached_compiled = self._cache.load_gm(hashkey)
+                    if cached_compiled is not None:
+                        return cached_compiled
+
+                # NOTE(liuyuan): gm could be changed in the compiler, and we should keep the original graph for logging difference.
+                original_gm_graph = gm.graph
+                with local_logger("before"):
+                    logger.debug(f"before xpu_graph, graph like:\n {gm.graph}")
+                    logger.info(f"xpu_graph passes start {stage}...")
+
+                nodes_statistics.insert_statistics("before xpu_graph", gm)
+                xpu_compiled = self._pass_manager(gm, fake_inputs, stage)
+                nodes_statistics.insert_statistics("after xpu_graph", xpu_compiled)
 
                 with local_logger("after"):
-                    logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
                     logger.info("xpu_graph passes complete")
-                    logger.info(
-                        f"after xpu_graph, nodes num: {len(xpu_compiled.graph.nodes)}"
+                    logger.debug(f"after xpu_graph, graph like:\n {xpu_compiled.graph}")
+                    logger.debug(
+                        "Final difference after optimizations by xpu_graph:%s\n",
+                        GitLikeDiffer(original_gm_graph, xpu_compiled.graph),
                     )
 
-                if stage == FxStage.pregrad:
+                logger.info(f"node statistic: {str(nodes_statistics)}")
+
+                if self._config.export_mode:
                     return xpu_compiled
 
-                if self._config.vendor_compiler_config:
-
+                if stage != FxStage.pregrad and self._config.vendor_compiler_config:
+                    xpu_compiled = decompose_for_inductor(xpu_compiled, fake_inputs)
+                    extra_kwargs = {}
+                    if stage == FxStage.inference:
+                        extra_kwargs["is_inference"] = True
+                    elif stage == FxStage.backward:
+                        extra_kwargs["is_backward"] = True
                     from .backends import vendor_compiler
 
-                    return vendor_compiler(
+                    xpu_compiled = vendor_compiler(
                         xpu_compiled,
                         fake_inputs,
                         self._config.target,
                         self._config.vendor_compiler_config,
+                        **extra_kwargs,
                     )
 
+                xpu_compiled = SerializeWrapper(xpu_compiled)
+
+                if self._config.enable_cache:
+                    xpu_compiled = self._cache.save_gm(hashkey, xpu_compiled)
+
             return xpu_compiled
-        
+
         def _staged_compiler(stage: FxStage):
             def wrapped(gm, sample_inputs):
                 with local_logger(stage.name):
                     xpu_compiled = _compiler(gm, sample_inputs, stage)
                 return xpu_compiled
-            
+
             return wrapped
 
         if self._config.is_training:
             # Since: 1. dynamo has eliminated control-flow for input GraphModule
             #    and 2. aot_autograd traces grad again
             # It's okay use optimized infer-graph for training as well
-            pregrad_gm = _staged_compiler(FxStage.pregrad)(dynamo_gm, example_inputs)
+            logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
+            logger.info("decompose graph start...")
+            dispatched_gm, fake_inputs = dispatch_graph(
+                dynamo_gm, example_inputs, stage=FxStage.pregrad
+            )
+            logger.info("decompose graph complete")
+            logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
+
+            pregrad_gm = _staged_compiler(FxStage.pregrad)(dispatched_gm, fake_inputs)
 
             xpu_gm = aot_autograd(
                 fw_compiler=_staged_compiler(FxStage.forward),
                 bw_compiler=_staged_compiler(FxStage.backward),
-            )(pregrad_gm, example_inputs)
+            )(pregrad_gm, fake_inputs)
         else:
-            logger.info("aot_export_module start...")
-            logger.debug(f"before aot_export_module, graph like:\n {dynamo_gm.graph}")
-
-            exported_gm, gs = aot_export_module(
-                dynamo_gm, example_inputs, trace_joint=False
+            logger.debug(f"before decompose: graph like:\n {dynamo_gm.graph}")
+            logger.info("decompose graph start...")
+            dispatched_gm, fake_inputs = dispatch_graph(
+                dynamo_gm, example_inputs, stage=FxStage.inference
             )
-            logger.info("aot_export_module complete")
-            logger.debug(f"after aot_export_module, graph like:\n {exported_gm.graph}")
-            logger.debug(f"graph signature: {gs}")
-
-            logger.info("unlift graph start...")
-            logger.debug(f"before unlift, graph like:\n {exported_gm.graph}")
-            unlifted_gm = unlift_exported_gm(
-                dynamo_gm, exported_gm, gs, freeze=self._config.freeze
+            logger.info("decompose graph complete")
+            logger.debug(f"after decompose, graph like:\n {dispatched_gm.graph}")
+            logger.debug(
+                f"Difference:\n %s", GitLikeDiffer(dynamo_gm.graph, dispatched_gm.graph)
             )
-            logger.info("unlift graph complete")
-            logger.debug(f"after unlift, graph like:\n {unlifted_gm.graph}")
 
-            xpu_gm = _staged_compiler(FxStage.inference)(unlifted_gm, example_inputs)
+            xpu_gm = _staged_compiler(FxStage.inference)(dispatched_gm, fake_inputs)
 
         return xpu_gm
+
+    def aot_export(
+        self,
+        mod: torch.nn.Module,
+        example_args,
+        example_kwargs=None,
+        package_path=None,
+        *args,
+        **kwargs,
+    ):
+        from packaging import version
+
+        torch_version = version.parse(torch.__version__[:5])
+        if torch_version < version.parse("2.6.0"):
+            logger.error(
+                "AOT export functionality is only available on torch 2.6 for now"
+            )
+            raise NotImplemented
+        if self._config.is_training:
+            logger.error("AOT export functionality is only available for inference")
+            raise NotImplemented
+
+        example_kwargs = example_kwargs or {}
+
+        logger.info("export module start...")
+        exported_prog = torch.export.export(mod, example_args, example_kwargs)
+        logger.info("export module complete")
+
+        flat_inputs = exported_prog._graph_module_flat_inputs(
+            *exported_prog.example_inputs
+        )
+        optimized_gm = self.__call__(exported_prog._graph_module, flat_inputs)
+        exported_prog._graph_module = optimized_gm
+
+        logger.info("aot_inductor start...")
+        logger.warning(
+            "AOT export ignores vendor_compiler configs, use default aot_inductor settings"
+        )
+        dump_path = torch._inductor.aoti_compile_and_package(
+            exported_prog, package_path=package_path
+        )
+        logger.info("aot_inductor complete")
+        logger.info(f"after aot_inductor, saving optimized module to {dump_path}")
+        return dump_path
 
     def get_pattern_manager(self):
         return self._pass_manager.get_pattern_manager()

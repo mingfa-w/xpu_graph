@@ -10,6 +10,29 @@ def fused_div_mul_sum_kernel(
         XBLOCK1: tl.constexpr, XBLOCK1_SUB: tl.constexpr,
         TSIZE0: tl.constexpr, XSIZE0: tl.constexpr, XSIZE1: tl.constexpr, YSIZE: tl.constexpr, RSIZE: tl.constexpr,
         CORE_SCALE: tl.constexpr):
+    """
+    This function fused div mul sum ops, pack into one kernel
+
+    Parameters:
+    # tensor paras: N0, N1, N2, N3, N4 = 10, 15, 255, 4, 128
+    out_ptr0: the result of mul_2 (torch.ops.aten.mul.Tensor(sum_3, 0.5))
+    in_ptr0: unsqueeze_2 in torch_func
+    in_ptr1: clamp_min in torch_func
+    in_ptr2: unsqueeze_3 in torch_func
+    in_ptr3: clamp_min_1 in torch_func
+    XBLOCK0: N1
+    XBLOCK0_SUB: N1
+    XBLOCK1: (N2+core_scale-1)//core_scale
+    XBLOCK1_SUB: 2
+    TSIZE0: N0
+    XSIZE0: N1
+    XSIZE1: N2
+    YSIZE: N3
+    RSIZE: N4
+    CORE_SCALE: control cores in use
+
+    Returns: out_ptr0: the result of mul_2 (torch.ops.aten.mul.Tensor(sum_3, 0.5))
+    """
     pid = tl.program_id(0)
     x0_pid = pid // CORE_SCALE
     x1_pid = pid % CORE_SCALE
