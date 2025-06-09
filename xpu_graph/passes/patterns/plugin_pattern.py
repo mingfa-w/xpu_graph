@@ -64,8 +64,6 @@ class PluginPattern(Pattern):
         matched = subgraph_rewriter.replace_pattern_with_filters(
             gm, self._eager_pattern, self._replacement, self._filter_list, ignore_literals=True
         )
-        with __PLUGIN_PATTERN_LOCAL_LOGGER__ as logger:
-            logger.debug("Graph after %s : %s", self.name, gm.graph)
         return len(matched) > 0
 
     def __str__(self):
