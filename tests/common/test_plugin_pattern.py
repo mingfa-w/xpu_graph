@@ -47,10 +47,6 @@ def constraint_reg_success_log(x, y, postfix=None):
 
 
 class TestPluginPattern:
-    # WARNING(liuyuan): MUST construct a dummy compiler before any need_xpu_graph_logs.
-    def setup_method(self):
-        self.xpu_graph = XpuGraph(XpuGraphConfig(is_training=False, debug=True))
-
     def test_basic(self, caplog):
         with need_xpu_graph_logs():
             with enable_plugin_patterns():

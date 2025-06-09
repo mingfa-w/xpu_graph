@@ -9,7 +9,7 @@ from torch.fx.experimental.proxy_tensor import make_fx
 from xpu_graph.config import Target
 from xpu_graph.fx_utils import FxStage, dispatch_graph
 from xpu_graph.passes.dce import Dce
-from xpu_graph.utils import logger
+from xpu_graph.utils import local_logger
 
 from .pattern import Pattern
 
@@ -20,6 +20,8 @@ __all__ = [
     "deregister_plugin_patterns",
     "enable_plugin_patterns",
 ]
+
+__PLUGIN_PATTERN_LOCAL_LOGGER__ = local_logger("plugin_pattern")
 
 
 class DceIncPlaceHolder(Dce):
@@ -49,7 +51,8 @@ class PluginPattern(Pattern):
         self._replacement = replacement
         self._filter_list = list(filter_list) if filter_list is not None else []
         self.name = name
-        logger.debug("Pattern %s : %s", self.name, self._eager_pattern.graph)
+        with __PLUGIN_PATTERN_LOCAL_LOGGER__ as logger:
+            logger.debug("Pattern %s : %s", self.name, self._eager_pattern.graph)
 
     @property
     def filter_list(self):
@@ -59,7 +62,8 @@ class PluginPattern(Pattern):
         matched = subgraph_rewriter.replace_pattern_with_filters(
             gm, self._eager_pattern, self._replacement, self._filter_list, ignore_literals=True
         )
-        logger.debug("Graph after %s : %s", self.name, gm.graph)
+        with __PLUGIN_PATTERN_LOCAL_LOGGER__ as logger:
+            logger.debug("Graph after %s : %s", self.name, gm.graph)
         return len(matched) > 0
 
     def __str__(self):
@@ -209,7 +213,8 @@ def register_this_as_pattern_constraint(func):
 
     for pattern in pattern_list:
         pattern.filter_list.append(param_check)
-    logger.debug("Register constraint %s for %s successfully.", func.__name__, func_name)
+    with __PLUGIN_PATTERN_LOCAL_LOGGER__ as logger:
+        logger.debug("Register constraint %s for %s successfully.", func.__name__, func_name)
     return func
 
 
@@ -222,15 +227,16 @@ def deregister_plugin_patterns(func_or_func_name: Union[Callable, AnyStr], targe
     else:
         raise ValueError("func_or_func_name should be Callable or str")
 
-    if target:
-        if func_name in __PLUGIN_PATTERN_GROUP__.get(target, {}):
-            del __PLUGIN_PATTERN_GROUP__[target][func_name]
-            logger.debug("Deregister pattern %s successfully.", func_name)
-    else:
-        for target_patterns in __PLUGIN_PATTERN_GROUP__.values():
-            if func_name in target_patterns:
-                del target_patterns[func_name]
+    with __PLUGIN_PATTERN_LOCAL_LOGGER__ as logger:
+        if target:
+            if func_name in __PLUGIN_PATTERN_GROUP__.get(target, {}):
+                del __PLUGIN_PATTERN_GROUP__[target][func_name]
                 logger.debug("Deregister pattern %s successfully.", func_name)
+        else:
+            for target_patterns in __PLUGIN_PATTERN_GROUP__.values():
+                if func_name in target_patterns:
+                    del target_patterns[func_name]
+                    logger.debug("Deregister pattern %s successfully.", func_name)
 
 
 @contextmanager
