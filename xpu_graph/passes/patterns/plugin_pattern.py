@@ -45,7 +45,9 @@ class PluginPattern(Pattern):
         super().__init__()
         super().set_current_stage(FxStage.pregrad if is_training else FxStage.inference)
         self._eager_pattern, _ = dispatch_graph(
-            make_fx(eager_func)(*example_inputs), example_inputs, stage=self._current_stage
+            make_fx(eager_func, tracing_mode="fake", pre_dispatch=is_training)(*example_inputs),
+            example_inputs,
+            stage=self._current_stage,
         )
         DceIncPlaceHolder().process(self._eager_pattern)
         self._replacement = replacement
