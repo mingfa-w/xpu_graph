@@ -3,12 +3,15 @@ from contextlib import contextmanager
 from typing import AnyStr, Callable, List, Union
 
 from torch import fx
-from torch.fx import subgraph_rewriter, symbolic_trace
+from torch.fx import symbolic_trace
+
+# from torch.fx import subgraph_rewriter
 from torch.fx.experimental.proxy_tensor import make_fx
 
 from xpu_graph.config import Target
 from xpu_graph.fx_utils import FxStage, dispatch_graph
 from xpu_graph.passes.dce import Dce
+from xpu_graph.passes.patterns.pattern_match import subgraph_rewriter
 from xpu_graph.utils import local_logger
 
 from .pattern import Pattern
@@ -46,6 +49,7 @@ class PluginPattern(Pattern):
         super().set_current_stage(FxStage.pregrad if is_training else FxStage.inference)
         self._eager_pattern, _ = dispatch_graph(
             make_fx(eager_func, tracing_mode="fake", pre_dispatch=is_training)(*example_inputs),
+            # symbolic_trace(eager_func),
             example_inputs,
             stage=self._current_stage,
         )
