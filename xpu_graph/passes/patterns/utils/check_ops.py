@@ -1,9 +1,8 @@
-import operator
-from typing import Any, Tuple, Union
-
 import torch
-from torch import fx, nn
+import operator
+from torch import nn, fx
 from torch.fx.operator_schemas import normalize_function, normalize_module
+from typing import Union, Tuple, Any
 
 aten = torch.ops.aten
 
@@ -14,7 +13,9 @@ def _is_valid_node(node: fx.Node) -> bool:
 
 def get_input_node(node, idx):
     if node.op == "call_function":
-        args_kwargs = normalize_function(node.target, node.args, node.kwargs, normalize_to_only_use_kwargs=False)
+        args_kwargs = normalize_function(
+            node.target, node.args, node.kwargs, normalize_to_only_use_kwargs=False
+        )
     elif node.op == "call_module":
         root = node.graph.owning_module
         args_kwargs = normalize_module(
@@ -37,10 +38,14 @@ def get_input_kw_node(node, key):
     from torch.fx.operator_schemas import normalize_function, normalize_module
 
     if node.op == "call_function":
-        args_kwargs = normalize_function(node.target, node.args, node.kwargs, normalize_to_only_use_kwargs=True)
+        args_kwargs = normalize_function(
+            node.target, node.args, node.kwargs, normalize_to_only_use_kwargs=True
+        )
     elif node.op == "call_module":
         root = node.graph.owning_module
-        args_kwargs = normalize_module(root, node.target, node.args, node.kwargs, normalize_to_only_use_kwargs=True)
+        args_kwargs = normalize_module(
+            root, node.target, node.args, node.kwargs, normalize_to_only_use_kwargs=True
+        )
     else:
         args_kwargs = None
     if args_kwargs is not None:
@@ -180,7 +185,9 @@ def check_bmm_op(
 def check_mm_op(
     node: fx.Node,
 ) -> Tuple[bool, Union[fx.Node, None], Union[fx.Node, None]]:
-    if check_op(node, aten.mm.default) or (check_op(node, aten.matmul.default) and check_meta_2d(node)):
+    if check_op(node, aten.mm.default) or (
+        check_op(node, aten.matmul.default) and check_meta_2d(node)
+    ):
         arg1 = node.args[0]
         arg2 = node.args[1]
         return True, arg1, arg2
@@ -188,13 +195,17 @@ def check_mm_op(
 
 
 def check_view(node):
-    if (not check_op(node, aten._unsafe_view.default)) and (not check_op(node, aten.view.default)):
+    if (not check_op(node, aten._unsafe_view.default)) and (
+        not check_op(node, aten.view.default)
+    ):
         return False
     return True
 
 
 def check_softmax_op(node: fx.Node) -> bool:
-    if (not check_op(node, aten._safe_softmax.default)) and (not check_op(node, aten._softmax.default)):
+    if (not check_op(node, aten._safe_softmax.default)) and (
+        not check_op(node, aten._softmax.default)
+    ):
         return False
     return True
 
@@ -211,7 +222,12 @@ def check_cat_op(node: fx.Node):
 
 
 def check_slice_op(node: fx.Node) -> bool:
-    return check_op(node, aten.slice.Tensor)
+    if check_op(node, aten.slice.Tensor):
+        return True
+    if 'aten.slice' in str(node.target):
+        return True
+    else:
+        return False
 
 
 def check_sum_op(node: fx.Node) -> bool:
@@ -229,6 +245,8 @@ def check_trans_op(node: fx.Node) -> bool:
 def check_t_op(node: fx.Node) -> bool:
     return check_op(node, aten.t.default)
 
+def check_typecast_op(node: fx.Node) -> bool:
+    return node.target == 'to' or "dtype_cast" in str(node.target)
 
 def check_act_op(
     node: fx.Node,
@@ -241,8 +259,6 @@ def check_act_op(
         return True, "gelu"
     if node.target == aten.relu.default:
         return True, "relu"
-    if node.target == aten.sigmoid.default:
-        return True, "sigmoid"
     return False, None
 
 
@@ -282,6 +298,8 @@ def check_norm_op(node: fx.node):
     if node.target == aten.native_layer_norm.default:
         return True, "layer_norm"
     if node.target == "rms_norm_op":
+        return True, "rms_norm"
+    if 'rms_norm' in str(node.target):
         return True, "rms_norm"
     return False, None
 
