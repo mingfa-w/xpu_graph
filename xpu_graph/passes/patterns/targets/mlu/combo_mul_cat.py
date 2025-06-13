@@ -45,6 +45,27 @@ def match_mul(val):
     return True
 
 
+def match_mul1(val):
+    if not check_mul_op(val):
+        return False
+    # if "mul_replacement" in val.name
+    #    # shape infer
+    #    return False
+    users = val.users
+    if len(users) > 2:
+        return False
+    if len(users) == 2:
+        a, b = list(users.keys())
+        if not (a.op == "output" or b.op == "output"):
+            return False
+    inp1, inp2 = val.args
+    if isinstance(inp1, (float, int)):
+        return False
+    if not isinstance(inp2, (float, int)):
+        return False
+    return True
+
+
 class ComboMulCat(Pattern):
     _opt_level = OptLevel.level2
 
@@ -138,6 +159,104 @@ class ComboMulCat(Pattern):
                     name=node.name + "_mul_cat_replacement2",
                 )
 
+                # 步骤7: 处理n_list中有其他使用者的mul节点
+                muls_with_other_users = []
+                for i, mul_node in enumerate(n_list):
+                    if len(mul_node.users) != 1:  # 不只被cat使用
+                        muls_with_other_users.append((i, mul_node))
+
+                if muls_with_other_users != []:
+                    single_mul_size = get_shape(n_list[0])[axis]
+                    with graph_module.graph.inserting_after(replace_node):
+                        split_results = graph_module.graph.create_node(
+                            op="call_function",
+                            target=torch.ops.aten.split.Tensor,
+                            args=(replace_node, single_mul_size, axis),
+                            name=node.name + "_split_results",
+                        )
+                    with graph_module.graph.inserting_after(split_results):
+                        for i, mul_node in muls_with_other_users:
+                            split_part = graph_module.graph.call_function(
+                                operator.getitem,
+                                args=(split_results, i),
+                                kwargs={},
+                            )
+                            mul_node.replace_all_uses_with(split_part)
+
+            new_cat_input.append(replace_node)
+            new_cat_input += ori_cat_input[best_end + 1 :]
+
+            if len(new_cat_input) > 1:
+                with graph_module.graph.inserting_before(node):
+                    cat_node = graph_module.graph.create_node(
+                        op="call_function",
+                        target=torch.ops.aten.cat.default,
+                        args=(new_cat_input, axis),
+                        name=node.name + "_replacement",
+                    )
+                node.replace_all_uses_with(cat_node)
+            else:
+                node.replace_all_uses_with(replace_node)
+            changed = True
+
+        return changed
+
+
+class FusedMultConstCat(Pattern):
+    _opt_level = OptLevel.level2
+
+    def process(self, graph_module: fx.GraphModule) -> bool:
+        changed = False
+
+        candidates = [
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "call_function"
+            and (node.target == torch.ops.aten.cat.default)
+        ]
+
+        for node in candidates:
+            ori_cat_input = node.args[0]
+            axis = node.args[1]
+            if len(ori_cat_input) < MINI_LEN:
+                continue
+            start, end = match_sub_list(
+                ori_cat_input,
+                match_mul1,
+            )
+            if end - start + 1 < MINI_LEN:
+                continue
+            best_start, best_end = find_longest_same_shape_sequence(
+                ori_cat_input, start, end, MINI_LEN
+            )
+            shape_length = best_end - best_start + 1
+            if shape_length < MINI_LEN:
+                continue
+            best_start, best_end = find_longest_same_param(
+                ori_cat_input, best_start, best_end, MINI_LEN
+            )
+            shape_length = best_end - best_start + 1
+            if shape_length < MINI_LEN:
+                continue
+            n_list = ori_cat_input[best_start : best_end + 1]
+
+            mul_inputs = [n.args[0] for n in n_list]
+
+            new_cat_input = ori_cat_input[:best_start]
+            with graph_module.graph.inserting_before(node):
+                fused_tensor = graph_module.graph.create_node(
+                    op="call_function",
+                    target=torch.ops.aten.cat.default,
+                    args=(mul_inputs, axis),
+                    name=node.name + "_mulconst_cat_replacement1",
+                )
+
+                replace_node = graph_module.graph.create_node(
+                    op="call_function",
+                    target=torch.ops.aten.mul.Tensor,
+                    args=(fused_tensor, n_list[0].args[1]),
+                    name=node.name + "_mulconst_cat_replacement2",
+                )
                 # 步骤7: 处理n_list中有其他使用者的mul节点
                 muls_with_other_users = []
                 for i, mul_node in enumerate(n_list):

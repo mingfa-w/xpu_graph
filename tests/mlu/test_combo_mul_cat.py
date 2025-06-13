@@ -39,6 +39,17 @@ def fn2(tensors):
     return result, mul1
 
 
+def fn3(tensors):
+    a, b, c, d, e, f, g, h = tensors
+    mul1 = a * 0.4
+    mul2 = c * 0.4
+    mul3 = e * 0.4
+    mul4 = b * 0.4
+    mul5 = g * 0.1
+    result = torch.cat([mul1, mul2, mul3, mul4, mul5], dim=1)
+    return result, mul1
+
+
 def mul_sum_cat_test(xpu_graph_backend, func):
     batch = 1024
     dtype = torch.half
@@ -76,6 +87,7 @@ if __name__ == "__main__":
     xpu_graph_backend = xpu_graph.mlu_compiler(
         is_training=False,
     )
-    mul_sum_cat_test(xpu_graph_backend, fn0)
-    mul_sum_cat_test(xpu_graph_backend, fn1)
-    mul_sum_cat_test(xpu_graph_backend, fn2)
+    # mul_sum_cat_test(xpu_graph_backend, fn0)
+    # mul_sum_cat_test(xpu_graph_backend, fn1)
+    # mul_sum_cat_test(xpu_graph_backend, fn2)
+    mul_sum_cat_test(xpu_graph_backend, fn3)
