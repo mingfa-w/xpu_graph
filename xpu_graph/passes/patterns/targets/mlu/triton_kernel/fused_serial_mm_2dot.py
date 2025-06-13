@@ -1,4 +1,5 @@
 import copy
+from typing import Optional
 
 import torch
 import torch_mlu
@@ -145,9 +146,9 @@ def fused_serial_mm_2dot_kernel(
 def fuse_serial_mm_2dot(
     a: torch.Tensor,
     b: torch.Tensor,
-    bias1: torch.Tensor,
+    bias1: Optional[torch.Tensor],
     c: torch.Tensor,
-    bias2: torch.Tensor,
+    bias2: Optional[torch.Tensor],
     is_up_bias: bool,
     is_down_bias: bool,
     is_up_act: bool,
@@ -198,9 +199,9 @@ def fuse_serial_mm_2dot(
 def fuse_serial_mm_2dot_fake(
     a: torch.Tensor,
     b: torch.Tensor,
-    bias1: torch.Tensor,
+    bias1: Optional[torch.Tensor],
     c: torch.Tensor,
-    bias2: torch.Tensor,
+    bias2: Optional[torch.Tensor],
     is_up_bias: bool,
     is_down_bias: bool,
     is_up_act: bool,
