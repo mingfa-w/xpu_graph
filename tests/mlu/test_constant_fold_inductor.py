@@ -68,11 +68,20 @@ class TestConstantFolding:
 
 if __name__ == "__main__":
     xpu_graph_backend = mlu_compiler(
+<<<<<<< fix_reload_inductor
         freeze=True,
         constant_folding=True,
         folding_freezd_params=False,
         is_training=False,
         debug=True,
         vendor_compiler_config={"mode": "default"},
+=======
+        is_training=False,
+        freeze=True,
+        constant_folding=True,
+        folding_freezed_params=False,
+        vendor_compiler_config={"mode": "default"},
+        debug=True,
+>>>>>>> master
     )
     constant_folding_with_reload_test(xpu_graph_backend)
