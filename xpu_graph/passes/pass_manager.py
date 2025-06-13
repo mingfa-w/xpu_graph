@@ -38,6 +38,8 @@ class PassManager:
             self._passes.append(ConstantFolding(self._config.folding_freezed_params))
 
         self._passes.append(self._pattern_manager)
+        for pass_ in self._passes:
+            pass_._set_level(self._config.opt_level)
 
     def reset_enable_passes_with_stage(self, stage: FxStage):
         self._enable_passes = []
