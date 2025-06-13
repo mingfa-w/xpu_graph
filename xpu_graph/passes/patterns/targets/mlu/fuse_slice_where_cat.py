@@ -150,9 +150,10 @@ def _is_stack_to_cat(
 
 
 class FusedSliceWhereCat(Pattern):
-    _opt_level = OptLevel.level2
+    _opt_level = OptLevel.level1
 
     def process(self, graph_module: fx.GraphModule) -> bool:
+        return False
         is_modified = False
         for node in reversed(graph_module.graph.nodes):
             is_change_stack, stack_params = _is_stack_to_cat(node)

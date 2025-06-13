@@ -80,3 +80,31 @@ def find_longest_same_param(inputs, start, end, mini_len):
         if current_length == end - i + 1:
             break
     return best_start, best_end
+
+
+def find_longest_same_input(inputs, start, end, mini_len):
+    best_start = start
+    best_end = start
+    best_length = 1
+
+    for i in range(start, end + 1):
+        current_param = inputs[i].args[0]
+        current_start = i
+        current_end = i
+
+        for j in range(i + 1, end + 1):
+            if inputs[j].args[0] == current_param:
+                current_end = j
+            else:
+                break
+
+        current_length = current_end - current_start + 1
+
+        if current_length > best_length:
+            best_start = current_start
+            best_end = current_end
+            best_length = current_length
+
+        if current_length == end - i + 1:
+            break
+    return best_start, best_end
