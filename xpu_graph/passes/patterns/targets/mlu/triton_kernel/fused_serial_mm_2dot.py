@@ -39,6 +39,7 @@ def relu(x):
     return tl.maximum(x, zero)
 
 
+@libentry.fast_libentry(key=["M", "K1", "N1", "N2", "is_up_bias", "is_down_bias", "is_up_act", "is_down_act"], first_const_id=7)
 @libentry.libentry()
 @libentry.libtuner(
     configs=configs,

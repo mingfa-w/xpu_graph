@@ -9,6 +9,7 @@ from . import libentry
 from .get_mlu_devinfo import get_device_properties
 
 
+@libentry.fast_libentry(key=['slice_row', 'slice_len', 'slice_num', 'loop', 'total_jobs'], first_const_id=12)
 @libentry.libentry()
 @triton.jit
 def mlu_triton_slice_where_cat_kernel(
@@ -72,7 +73,6 @@ def mlu_triton_slice_where_cat_kernel(
                 order=(1, 0),
             )
             tl.store(output_block_ptr, slice_where, boundary_check=(0,))
-
 
 @torch.library.custom_op("torch_mlu_triton::fuse_slice_where_cat", mutates_args=(), device_types="mlu")
 def fuse_slice_where_cat(

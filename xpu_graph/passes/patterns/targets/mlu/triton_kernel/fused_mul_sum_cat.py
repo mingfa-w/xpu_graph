@@ -84,6 +84,7 @@ def single_mul_sum_cat(
     tl.store(output_block_ptr, value, boundary_check=(0,))
 
 
+@libentry.fast_libentry(key=['input0_row', 'input1_row', 'input2_row', 'input3_row', 'slice_len','total_jobs'], first_const_id=16)
 @libentry.libentry()
 @libentry.libtuner(
     configs=[

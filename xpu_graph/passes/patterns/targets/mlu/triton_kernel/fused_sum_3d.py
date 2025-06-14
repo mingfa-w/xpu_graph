@@ -80,7 +80,9 @@ def mlu_triton_sum_3d_input_dim_2_kernel(
         )
         tl.store(output_ptr_, data, boundary_check=(1, 0))
 
-
+# remove tuple_sx as key may cause error in unit test.
+@libentry.fast_libentry(key=['dim', 'TOTAL_JOBS'], first_const_id=8)
+#@libentry.fast_libentry(key=['dim', 'TOTAL_JOBS', 'tuple_s0', 'tuple_s1', 'tuple_s2'], first_const_id=8)
 @libentry.libentry()
 @triton.jit
 def mlu_triton_sum_3d_input_kernel(
@@ -89,10 +91,10 @@ def mlu_triton_sum_3d_input_kernel(
     tuple_s0,
     tuple_s1,
     tuple_s2,
-    dim: tl.constexpr,
     MUTI_BLOCK_SIZE_0,
     MUTI_BLOCK_SIZE_1,
     MUTI_BLOCK_SIZE_2,
+    dim: tl.constexpr,
     TOTAL_JOBS: tl.constexpr = 16,
 ):
     program_dim = tl.num_programs(axis=0)
@@ -171,10 +173,10 @@ def fused_sum_3d_input(
         tuple([tl.constexpr(i.shape[0]) for i in inputs]),
         tuple([tl.constexpr(i.shape[1]) for i in inputs]),
         tuple([tl.constexpr(i.shape[2]) for i in inputs]),
-        dim,
         tuple([tl.constexpr(max_s0) for max_s0 in muti_block_s0]),
         tuple([tl.constexpr(max_s1) for max_s1 in muti_block_s1]),
         tuple([tl.constexpr(max_s2) for max_s2 in muti_block_s2]),
+        dim,
         len(inputs),
         num_stages=num_stages,
     )

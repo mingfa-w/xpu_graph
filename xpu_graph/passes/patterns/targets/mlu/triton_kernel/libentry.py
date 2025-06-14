@@ -477,3 +477,54 @@ def libentry():
         return LibEntry(fn)
 
     return decorator
+
+def hash_constexpr(self):
+    return hash(self.value)
+
+triton.language.core.constexpr.__hash__ = hash_constexpr
+
+class FastLibEntry(triton.KernelInterface):
+    def __init__(
+        self,
+        fn,
+        arg_names,
+        key,
+        first_const_id
+    ):
+        assert isinstance(fn, LibEntry)
+        self.fn = fn
+        self.arg_names=arg_names
+        self.first_const_id=first_const_id
+        self.key_idx = [arg_names.index(k) for k in key]
+        self.cache = dict()
+        self.lock = threading.Lock()
+        #device = torch.mlu.current_device()
+        #self.stream = torch.mlu.current_stream(device).mlu_stream
+        
+    
+    def run(self, *args, **kwargs):
+        key = [args[i] for i in self.key_idx]
+        key = tuple(key)
+        grid = kwargs["grid"]
+        
+        while key not in self.cache:
+            with self.lock:
+                if key in self.cache:
+                    break
+                kernel, constexprs= self.fn.run(*args, **kwargs)
+                self.cache[key] = (kernel, constexprs)
+            return kernel, constexprs
+        kernel, constexprs = self.cache[key]
+        if callable(grid):
+            meta = {**dict(zip(self.arg_names, args)), **kwargs, **constexprs}
+            grid = grid(meta)
+        grid = grid + (1, 1)
+
+        #kernel[grid[0:3]](*[x for x in args[:self.first_const_id] if x is not None], stream=self.stream)
+        kernel[grid[0:3]](*[x for x in args[:self.first_const_id] if x is not None])
+        return kernel, constexprs
+
+def fast_libentry(key, first_const_id):
+    def decorator(fn):
+        return FastLibEntry(fn, fn.arg_names, key, first_const_id)
+    return decorator
