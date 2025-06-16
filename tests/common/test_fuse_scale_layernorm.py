@@ -2,10 +2,9 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_mlu
-import torch_mlu_ops
 
 import xpu_graph
+from xpu_graph import XpuGraph, XpuGraphConfig
 from xpu_graph.config import OptLevel
 from xpu_graph.test_utils import (
     assertTensorsEqual,
@@ -14,8 +13,8 @@ from xpu_graph.test_utils import (
     skip_xpu_graph_cache,
 )
 
-device = "mlu:0"
-data_type = torch.float16
+device = "cpu"
+data_type = torch.float
 aten = torch.ops.aten
 
 
@@ -48,7 +47,7 @@ def layernorm_test(xpu_graph, func):
 
 class TestLayerNorm:
     def setup_class(self):
-        self.xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, freeze=True, opt_level=OptLevel.level2)
+        self.xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, freeze=True, opt_level=OptLevel.level2))
 
     @pytest.mark.parametrize(
         "pattern_func",
@@ -61,5 +60,5 @@ class TestLayerNorm:
 
 
 if __name__ == "__main__":
-    xpu_graph_backend = xpu_graph.mlu_compiler(is_training=False, freeze=True, opt_level=OptLevel.level2, debug=True)
+    xpu_graph_backend = XpuGraph(XpuGraphConfig(is_training=False, freeze=True, opt_level=OptLevel.level2, debug=True))
     layernorm_test(xpu_graph_backend, fn0)
