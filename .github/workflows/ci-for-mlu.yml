@@ -4,15 +4,19 @@ on:
     branches:
     - master
     types: [ opened, synchronize, reopened ]
-    # paths_ignore:
-    # - /**/npu/**
-    # - /**/ascend/**
-    # - /**/*npu*
-    # - /**/*ascend*
-    # - /**/docs
-    # - /**/ops
-    # - /**/docker/**
-    # - /**/*docker*
+    paths_ignore:
+    - "/doc/"
+    - "/docs/"
+    - "/README.md"
+    - "/tests/*"
+    - "!/tests/common/"
+    - "!/tests/mlu/"
+    - "/xpu_graph/backends/*"
+    - "!/xpu_graph/backends/__init__.py"
+    - "!/xpu_graph/backends/mlu.py"
+    - "/xpu_graph/passes/patterns/targets/*"
+    - "!/xpu_graph/passes/patterns/targets/__init__.py"
+    - "!/xpu_graph/passes/patterns/targets/mlu/"
   push:
     branches:
     - master
