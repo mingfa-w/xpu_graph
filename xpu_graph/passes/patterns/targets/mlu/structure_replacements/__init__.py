@@ -2,20 +2,12 @@ import torch
 import torch.fx as fx
 import torch_mlu
 
-from .triton_kernel.fused_slice import fused_slice_low
-from .triton_kernel.fused_slice_cat import fused_slice_cat
-from .triton_kernel.fused_slice_v2 import fused_slice_low_v2
-from .triton_kernel.fused_sum_3d import fused_sum_3d_input
-from .triton_kernel.get_mlu_devinfo import get_device_properties
-
-
-class RMSNormModule(torch.nn.Module):
-    def forward(self, inputs, weights, epsilon):
-        import torch_mlu_ops
-
-        if weights is not None and weights.dtype != inputs.dtype:
-            weights = weights.to(inputs.dtype)
-        return torch_mlu_ops.fused_rms_norm(inputs, None, weights, None, None, epsilon, False)
+from ..triton_kernel.fused_slice import fused_slice_low
+from ..triton_kernel.fused_slice_cat import fused_slice_cat
+from ..triton_kernel.fused_slice_v2 import fused_slice_low_v2
+from ..triton_kernel.fused_sum_3d import fused_sum_3d_input
+from ..triton_kernel.get_mlu_devinfo import get_device_properties
+from .norm_modules import LayerNormModule, RMSNormModule
 
 
 class FuseSliceModule(torch.nn.Module):
@@ -168,6 +160,7 @@ class ComboSumModule(torch.nn.Module):
 def get_structure_replacements(config):
     return {
         "CustomRMSNorm": RMSNormModule,
+        "CustomLayerNorm": LayerNormModule,
         "FusedSlice": FuseSliceModule,
         "FusedCatSlice": FuseSliceCatSameInputModule,
         "FusedSliceStackSum": FuseSliceCatSameInputModule,
